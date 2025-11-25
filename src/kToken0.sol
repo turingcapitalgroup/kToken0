@@ -24,6 +24,16 @@ contract kToken0 is kToken, IERC7802, IERC165 {
     /// @param decimals The decimals of the new token
     event Token0Created(address indexed token, string name, string symbol, uint8 decimals);
 
+    /// @notice Emitted when tokens are minted from crosschain transactions
+    /// @param to the address to
+    /// @param amount the amount to transfer to
+    event Minted(address indexed to, uint256 amount);
+
+    /// @notice Emitted when tokens are burned from crosschain transactions
+    /// @param from the address we are burning from
+    /// @param amount the amount to burn from
+    event Burned(address indexed from, uint256 amount);
+
     /*//////////////////////////////////////////////////////////////
                                 CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
@@ -57,7 +67,8 @@ contract kToken0 is kToken, IERC7802, IERC165 {
     /// @notice Allows the OFT contract to mint tokens.
     /// @param _to Address to mint tokens to.
     /// @param _amount Amount of tokens to mint.
-    function crosschainMint(address _to, uint256 _amount) external nonReentrant onlyRoles(MINTER_ROLE) {
+    function crosschainMint(address _to, uint256 _amount) external nonReentrant {
+        _checkMinter(msg.sender);
         _checkPaused();
         _mint(_to, _amount);
         emit Minted(_to, _amount);
@@ -67,7 +78,8 @@ contract kToken0 is kToken, IERC7802, IERC165 {
     /// @notice Allows the OFT contract to burn tokens.
     /// @param _from Address to burn tokens from.
     /// @param _amount Amount of tokens to burn.
-    function crosschainBurn(address _from, uint256 _amount) external nonReentrant onlyRoles(MINTER_ROLE) {
+    function crosschainBurn(address _from, uint256 _amount) external nonReentrant {
+        _checkMinter(msg.sender);
         _checkPaused();
         _burn(_from, _amount);
         emit Burned(_from, _amount);
