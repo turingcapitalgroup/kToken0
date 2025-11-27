@@ -7,9 +7,9 @@ pragma solidity 0.8.30;
 /// We have extracted only the necessary hashing functionality to optimize contract size.
 /// Original code by Solady, modified for size optimization.
 library OptimizedEfficientHashLib {
-    /*´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
-    /*               MALLOC-LESS HASHING OPERATIONS               */
-    /*.•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
+    /* ´:°•.°+.*•´.*:˚.°*.˚•´.°:°•.°•.*•´.*:˚.°*.˚•´.°:°•.°+.*•´.*:*/
+    /* MALLOC-LESS HASHING OPERATIONS */
+    /* .•°:°.´+˚.*°.˚:*.´•*.+°.•°:´*.´•*.•°.•°:°.´:•˚°.*°.˚:*.´+°.•*/
 
     /// @dev Returns `keccak256(abi.encode(v0, v1, v2, v3))`.
     function hash(uint256 v0, uint256 v1, uint256 v2, uint256 v3) internal pure returns (bytes32 result) {
@@ -35,6 +35,34 @@ library OptimizedEfficientHashLib {
             mstore(add(m, 0x60), v3)
             mstore(add(m, 0x80), v4)
             result := keccak256(m, 0xa0)
+        }
+    }
+
+    /// @dev Returns `keccak256(abi.encode(v0, .., v6))`.
+    function hash(
+        uint256 v0,
+        uint256 v1,
+        uint256 v2,
+        uint256 v3,
+        uint256 v4,
+        uint256 v5,
+        uint256 v6
+    )
+        internal
+        pure
+        returns (bytes32 result)
+    {
+        /// @solidity memory-safe-assembly
+        assembly {
+            let m := mload(0x40)
+            mstore(m, v0)
+            mstore(add(m, 0x20), v1)
+            mstore(add(m, 0x40), v2)
+            mstore(add(m, 0x60), v3)
+            mstore(add(m, 0x80), v4)
+            mstore(add(m, 0xa0), v5)
+            mstore(add(m, 0xc0), v6)
+            result := keccak256(m, 0xe0)
         }
     }
 }
