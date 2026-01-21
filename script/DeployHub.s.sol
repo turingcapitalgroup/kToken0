@@ -9,11 +9,22 @@ import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy
 import { console2 } from "forge-std/Script.sol";
 
 /// @title DeployHub
-/// @notice Deploys kToken + kOFTAdapter for mainnet (hub) deployment
-/// @dev This is used for the mainnet hub where tokens are locked/released via kOFTAdapter
+/// @notice Deploys kToken + kOFTAdapter for hub (mainnet) deployment
+/// @dev Hub uses kOFTAdapter (lock/release) for total supply control and accounting guarantees.
+/// The kToken on mainnet represents the canonical supply backed 1:1 by underlying assets via KAM.
+///
+/// Architecture:
+/// - kToken: ERC20 with ERC7802 interface (crosschainMint/crosschainBurn available for bridges)
+/// - kOFTAdapter: Locks kToken on send, releases on receive (total supply unchanged)
+/// - Spokes use kOFT which mints/burns via ERC7802
+///
+/// Benefits of lock/release on hub:
+/// - totalSupply on mainnet = actual backed amount (single source of truth)
+/// - Easy auditing: locked amount shows cross-chain exposure
+/// - Compromise on spoke limited to locked amount
 contract DeployHub is DeploymentManager {
     kToken public token;
-    kOFTAdapter public koftAdapter;
+    kOFTAdapter public adapter;
 
     string public name;
     string public symbol;
@@ -34,7 +45,7 @@ contract DeployHub is DeploymentManager {
 
         // Check if we should use existing kToken or deploy new one
         if (config.existingKToken != address(0)) {
-            // Use existing kToken
+            // Use existing kToken (e.g., deployed via KAM's kRegistry)
             console2.log("=== Using Existing kToken (Hub) ===");
             token = kToken(config.existingKToken);
             console2.log("Using existing kToken at:", address(token));
@@ -58,32 +69,37 @@ contract DeployHub is DeploymentManager {
             token = kToken(address(tokenProxy));
             console2.log("kToken implementation:", address(tokenImplementation));
             console2.log("kToken proxy deployed at:", address(token));
+
+            // Write kToken implementation address
+            writeContractAddress("kTokenImplementation", address(tokenImplementation));
         }
 
-        // Step 2: Deploy kOFTAdapter (Hub uses adapter for locking/releasing)
+        // Deploy kOFTAdapter (Hub uses lock/release for total supply control)
         console2.log("=== Deploying kOFTAdapter (Hub) ===");
         kOFTAdapter adapterImplementation = new kOFTAdapter(address(token), config.layerZero.lzEndpoint);
         bytes memory adapterData = abi.encodeWithSelector(kOFTAdapter.initialize.selector, config.roles.owner);
         ERC1967Proxy adapterProxy = new ERC1967Proxy(address(adapterImplementation), adapterData);
-        koftAdapter = kOFTAdapter(address(adapterProxy));
+        adapter = kOFTAdapter(address(adapterProxy));
         console2.log("kOFTAdapter implementation:", address(adapterImplementation));
-        console2.log("kOFTAdapter proxy deployed at:", address(koftAdapter));
+        console2.log("kOFTAdapter proxy deployed at:", address(adapter));
 
-        // Step 3: Grant kOFTAdapter the MINTER_ROLE on kToken
-        console2.log("=== Granting MINTER_ROLE to kOFTAdapter ===");
-        token.grantMinterRole(address(koftAdapter));
-        console2.log("kOFTAdapter granted MINTER_ROLE on kToken");
+        // Note: kOFTAdapter does NOT need MINTER_ROLE - it locks/releases, doesn't mint/burn
+        // Users must approve kOFTAdapter to transfer their kTokens
 
-        // Step 4: Remove MINTER_ROLE from deployer for security
-        try token.revokeMinterRole(msg.sender) {
-            console2.log("Removed MINTER_ROLE from deployer");
-        } catch {
-            console2.log("Deployer did not have MINTER_ROLE or revocation failed");
+        // Remove MINTER_ROLE from deployer for security (only if we deployed new kToken)
+        if (config.existingKToken == address(0)) {
+            try token.revokeMinterRole(msg.sender) {
+                console2.log("Removed MINTER_ROLE from deployer");
+            } catch {
+                console2.log("Deployer did not have MINTER_ROLE or revocation failed");
+            }
         }
 
-        // Write all deployment addresses
+        vm.stopBroadcast();
+
+        // Write deployment addresses
         writeContractAddress("kToken", address(token));
-        writeContractAddress("kOFTAdapter", address(koftAdapter));
+        writeContractAddress("kOFTAdapter", address(adapter));
         writeContractAddress("kOFTAdapterImplementation", address(adapterImplementation));
 
         // Summary
@@ -94,14 +110,16 @@ contract DeployHub is DeploymentManager {
         } else {
             console2.log("kToken: (new)", address(token));
         }
-        console2.log("kOFTAdapter:", address(koftAdapter));
+        console2.log("kOFTAdapter:", address(adapter));
         console2.log("LayerZero Endpoint:", config.layerZero.lzEndpoint);
         console2.log("LayerZero EID:", config.layerZero.lzEid);
         console2.log("Owner:", config.roles.owner);
-        console2.log("Admin:", config.roles.admin);
-        console2.log("Emergency Admin:", config.roles.emergencyAdmin);
-        console2.log("Architecture: Hub - Tokens locked/released via kOFTAdapter");
+        console2.log("Architecture: Hub - kToken locked/released via kOFTAdapter (total supply preserved)");
 
-        vm.stopBroadcast();
+        console2.log("");
+        console2.log("=== Next Steps ===");
+        console2.log("1. Deploy kToken + kOFT on spoke chains using DeploySpoke.s.sol");
+        console2.log("2. Configure peers between kOFTAdapter (hub) and kOFT (spokes)");
+        console2.log("3. Users must approve kOFTAdapter to spend their kTokens before bridging");
     }
 }

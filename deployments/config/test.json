@@ -1,13 +1,28 @@
 {
   "network": "test",
   "chainId": 31337,
+  "deploymentType": "hub",
   "roles": {
-    "owner": "0x1",
-    "admin": "0x2",
-    "emergencyAdmin": "0x3"
+    "owner": "0x0000000000000000000000000000000000000001",
+    "admin": "0x0000000000000000000000000000000000000002",
+    "emergencyAdmin": "0x0000000000000000000000000000000000000003"
   },
   "layerZero": {
     "lzEndpoint": "0x6EDCE65403992e310A62460808c4b910D972f10f",
     "lzEid": 30101
-  }
+  },
+  "kTokens": {
+    "kUSD": {
+      "name": "KAM USD",
+      "symbol": "kUSD",
+      "decimals": 6
+    },
+    "kBTC": {
+      "name": "KAM BTC",
+      "symbol": "kBTC",
+      "decimals": 8
+    }
+  },
+  "existingKToken": "0x0000000000000000000000000000000000000000",
+  "peers": {}
 }

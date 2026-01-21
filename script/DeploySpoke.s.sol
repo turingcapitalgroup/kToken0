@@ -10,7 +10,13 @@ import { console2 } from "forge-std/Script.sol";
 
 /// @title DeploySpoke
 /// @notice Deploys kToken + kOFT for spoke chain deployment
-/// @dev This is used for spoke chains where tokens are burned/minted via kOFT
+/// @dev Spoke deployment is identical to hub - both use kOFT for burn/mint since kToken supports ERC7802.
+/// The only difference is conceptual: hub is where the "canonical" version lives (e.g., mainnet with KAM).
+///
+/// Architecture:
+/// - kToken: The ERC20 token with crosschain mint/burn capabilities (ERC7802)
+/// - kOFT: LayerZero OFT that calls kToken.crosschainBurn on send and kToken.crosschainMint on receive
+/// - kOFT receives MINTER_ROLE on kToken to perform crosschain operations
 contract DeploySpoke is DeploymentManager {
     kToken public token;
     kOFT public koft;
@@ -75,6 +81,7 @@ contract DeploySpoke is DeploymentManager {
 
         // Write all deployment addresses
         writeContractAddress("kToken", address(token));
+        writeContractAddress("kTokenImplementation", address(tokenImplementation));
         writeContractAddress("kOFT", address(koft));
         writeContractAddress("kOFTImplementation", address(implementation));
 

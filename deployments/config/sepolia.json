@@ -1,7 +1,7 @@
 {
   "network": "sepolia",
   "chainId": 11155111,
-  "deploymentType": "spoke",
+  "deploymentType": "hub",
   "roles": {
     "owner": "0x0000000000000000000000000000000000000000",
     "admin": "0x0000000000000000000000000000000000000000",
@@ -10,5 +10,28 @@
   "layerZero": {
     "lzEndpoint": "0x6EDCE65403992e310A62460808c4b910D972f10f",
     "lzEid": 40161
+  },
+  "kTokens": {
+    "kUSD": {
+      "name": "KAM USD",
+      "symbol": "kUSD",
+      "decimals": 6
+    },
+    "kBTC": {
+      "name": "KAM BTC",
+      "symbol": "kBTC",
+      "decimals": 8
+    }
+  },
+  "existingKToken": "0x0000000000000000000000000000000000000000",
+  "peers": {
+    "arbitrum-sepolia": {
+      "eid": 40231,
+      "oft": "0x0000000000000000000000000000000000000000"
+    },
+    "optimism-sepolia": {
+      "eid": 40232,
+      "oft": "0x0000000000000000000000000000000000000000"
+    }
   }
 }
