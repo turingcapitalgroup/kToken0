@@ -1,68 +1,76 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import { kToken0 } from "../../src/kToken0.sol";
+import { kToken } from "../../src/kToken.sol";
+import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { Test } from "forge-std/Test.sol";
 
 /**
- * @title kToken0 Unit Tests
- * @notice Comprehensive unit tests for kToken0 contract
+ * @title kToken Unit Tests
+ * @notice Comprehensive unit tests for kToken contract (unified with ERC7802)
  */
-contract kToken0UnitTest is Test {
-    kToken0 public token;
+contract kTokenUnitTest is Test {
+    kToken public token;
 
-    address public owner = address(0x1);
-    address public admin = address(0x2);
-    address public emergencyAdmin = address(0x3);
-    address public minter = address(0x4);
-    address public user1 = address(0x10);
-    address public user2 = address(0x20);
+    address public owner = address(0x1001);
+    address public admin = address(0x1002);
+    address public emergencyAdmin = address(0x1003);
+    address public minter = address(0x1004);
+    address public user1 = address(0x2001);
+    address public user2 = address(0x2002);
 
     string constant NAME = "kUSD Token";
     string constant SYMBOL = "kUSD";
     uint8 constant DECIMALS = 6;
 
-    event Minted(address indexed to, uint256 amount);
-    event Burned(address indexed from, uint256 amount);
     event CrosschainMint(address indexed to, uint256 amount, address indexed minter);
     event CrosschainBurn(address indexed from, uint256 amount, address indexed minter);
     event PauseState(bool paused);
 
     function setUp() public {
-        // Deploy using constructor
-        token = new kToken0(owner, admin, emergencyAdmin, minter, NAME, SYMBOL, DECIMALS);
+        // Deploy via UUPS proxy pattern
+        kToken implementation = new kToken();
+        bytes memory initData =
+            abi.encodeCall(kToken.initialize, (owner, admin, emergencyAdmin, minter, NAME, SYMBOL, DECIMALS));
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
+        token = kToken(address(proxy));
     }
 
     // ============================================
     // INITIALIZATION TESTS
     // ============================================
 
-    function test_Constructor_SetsNameCorrectly() public view {
+    function test_Initialize_SetsNameCorrectly() public view {
         assertEq(token.name(), NAME);
     }
 
-    function test_Constructor_SetsSymbolCorrectly() public view {
+    function test_Initialize_SetsSymbolCorrectly() public view {
         assertEq(token.symbol(), SYMBOL);
     }
 
-    function test_Constructor_SetsDecimalsCorrectly() public view {
+    function test_Initialize_SetsDecimalsCorrectly() public view {
         assertEq(token.decimals(), DECIMALS);
     }
 
-    function test_Constructor_SetsOwnerCorrectly() public view {
+    function test_Initialize_SetsOwnerCorrectly() public view {
         assertEq(token.owner(), owner);
     }
 
-    function test_Constructor_GrantsAdminRole() public view {
+    function test_Initialize_GrantsAdminRole() public view {
         assertTrue(token.hasAnyRole(admin, token.ADMIN_ROLE()));
     }
 
-    function test_Constructor_GrantsMinterRole() public view {
+    function test_Initialize_GrantsMinterRole() public view {
         assertTrue(token.hasAnyRole(minter, token.MINTER_ROLE()));
     }
 
-    function test_Constructor_InitialSupplyIsZero() public view {
+    function test_Initialize_InitialSupplyIsZero() public view {
         assertEq(token.totalSupply(), 0);
+    }
+
+    function test_Initialize_CannotReinitialize() public {
+        vm.expectRevert();
+        token.initialize(owner, admin, emergencyAdmin, minter, NAME, SYMBOL, DECIMALS);
     }
 
     // ============================================
@@ -79,20 +87,10 @@ contract kToken0UnitTest is Test {
         assertEq(token.totalSupply(), amount);
     }
 
-    function test_CrosschainMint_EmitsMintedEvent() public {
-        uint256 amount = 1000e6;
-
-        vm.expectEmit(true, false, false, true);
-        emit Minted(user1, amount);
-
-        vm.prank(minter);
-        token.crosschainMint(user1, amount);
-    }
-
     function test_CrosschainMint_EmitsCrosschainMintEvent() public {
         uint256 amount = 1000e6;
 
-        vm.expectEmit(true, false, false, true);
+        vm.expectEmit(true, true, false, true);
         emit CrosschainMint(user1, amount, minter);
 
         vm.prank(minter);
@@ -145,22 +143,11 @@ contract kToken0UnitTest is Test {
         assertEq(token.totalSupply(), 600e6);
     }
 
-    function test_CrosschainBurn_EmitsBurnedEvent() public {
-        vm.prank(minter);
-        token.crosschainMint(user1, 1000e6);
-
-        vm.expectEmit(true, false, false, true);
-        emit Burned(user1, 400e6);
-
-        vm.prank(minter);
-        token.crosschainBurn(user1, 400e6);
-    }
-
     function test_CrosschainBurn_EmitsCrosschainBurnEvent() public {
         vm.prank(minter);
         token.crosschainMint(user1, 1000e6);
 
-        vm.expectEmit(true, false, false, true);
+        vm.expectEmit(true, true, false, true);
         emit CrosschainBurn(user1, 400e6, minter);
 
         vm.prank(minter);
@@ -198,6 +185,62 @@ contract kToken0UnitTest is Test {
     }
 
     // ============================================
+    // MINT/BURN (NON-CROSSCHAIN) TESTS
+    // ============================================
+
+    function test_Mint_Success() public {
+        uint256 amount = 1000e6;
+
+        vm.prank(minter);
+        token.mint(user1, amount);
+
+        assertEq(token.balanceOf(user1), amount);
+    }
+
+    function test_Mint_RevertsForNonMinter() public {
+        vm.expectRevert();
+        vm.prank(user1);
+        token.mint(user1, 1000e6);
+    }
+
+    function test_Burn_Success() public {
+        vm.prank(minter);
+        token.mint(user1, 1000e6);
+
+        vm.prank(minter);
+        token.burn(user1, 400e6);
+
+        assertEq(token.balanceOf(user1), 600e6);
+    }
+
+    function test_BurnFrom_Success() public {
+        vm.prank(minter);
+        token.mint(user1, 1000e6);
+
+        // User approves minter to burn on their behalf
+        vm.prank(user1);
+        token.approve(minter, 500e6);
+
+        vm.prank(minter);
+        token.burnFrom(user1, 400e6);
+
+        assertEq(token.balanceOf(user1), 600e6);
+        assertEq(token.allowance(user1, minter), 100e6);
+    }
+
+    function test_BurnFrom_RevertsForInsufficientAllowance() public {
+        vm.prank(minter);
+        token.mint(user1, 1000e6);
+
+        vm.prank(user1);
+        token.approve(minter, 100e6);
+
+        vm.expectRevert();
+        vm.prank(minter);
+        token.burnFrom(user1, 200e6);
+    }
+
+    // ============================================
     // ROLE MANAGEMENT TESTS
     // ============================================
 
@@ -210,7 +253,7 @@ contract kToken0UnitTest is Test {
         assertTrue(token.hasAnyRole(newMinter, token.MINTER_ROLE()));
     }
 
-    function test_GrantMinterRole_RevertsForNonOwner() public {
+    function test_GrantMinterRole_RevertsForNonAdmin() public {
         vm.expectRevert();
         vm.prank(user1);
         token.grantMinterRole(user1);
@@ -223,7 +266,7 @@ contract kToken0UnitTest is Test {
         assertFalse(token.hasAnyRole(minter, token.MINTER_ROLE()));
     }
 
-    function test_RevokeMinterRole_RevertsForNonOwner() public {
+    function test_RevokeMinterRole_RevertsForNonAdmin() public {
         vm.expectRevert();
         vm.prank(user1);
         token.revokeMinterRole(minter);
@@ -236,6 +279,30 @@ contract kToken0UnitTest is Test {
         vm.expectRevert();
         vm.prank(minter);
         token.crosschainMint(user1, 1000e6);
+    }
+
+    function test_GrantAdminRole_OnlyOwner() public {
+        address newAdmin = address(0x888);
+
+        vm.prank(owner);
+        token.grantAdminRole(newAdmin);
+
+        assertTrue(token.hasAnyRole(newAdmin, token.ADMIN_ROLE()));
+    }
+
+    function test_GrantAdminRole_RevertsForNonOwner() public {
+        vm.expectRevert();
+        vm.prank(admin);
+        token.grantAdminRole(user1);
+    }
+
+    function test_GrantEmergencyRole_Success() public {
+        address newEmergency = address(0x777);
+
+        vm.prank(admin);
+        token.grantEmergencyRole(newEmergency);
+
+        assertTrue(token.hasAnyRole(newEmergency, token.EMERGENCY_ADMIN_ROLE()));
     }
 
     // ============================================
@@ -257,7 +324,7 @@ contract kToken0UnitTest is Test {
         token.setPaused(true);
     }
 
-    function test_SetPaused_RevertsForNonAdmin() public {
+    function test_SetPaused_RevertsForNonEmergencyAdmin() public {
         vm.expectRevert();
         vm.prank(user1);
         token.setPaused(true);
@@ -284,6 +351,18 @@ contract kToken0UnitTest is Test {
         token.crosschainMint(user1, 1000e6);
 
         assertEq(token.balanceOf(user1), 1000e6);
+    }
+
+    function test_Pause_BlocksTransfers() public {
+        vm.prank(minter);
+        token.mint(user1, 1000e6);
+
+        vm.prank(emergencyAdmin);
+        token.setPaused(true);
+
+        vm.expectRevert();
+        vm.prank(user1);
+        token.transfer(user2, 100e6);
     }
 
     // ============================================
@@ -378,6 +457,52 @@ contract kToken0UnitTest is Test {
     }
 
     // ============================================
+    // EMERGENCY WITHDRAW TESTS
+    // ============================================
+
+    function test_EmergencyWithdraw_ERC20() public {
+        // Send some tokens to the kToken contract accidentally
+        vm.prank(minter);
+        token.mint(address(token), 1000e6);
+
+        uint256 balanceBefore = token.balanceOf(user1);
+
+        vm.prank(emergencyAdmin);
+        token.emergencyWithdraw(address(token), user1, 1000e6);
+
+        assertEq(token.balanceOf(user1), balanceBefore + 1000e6);
+    }
+
+    function test_EmergencyWithdraw_ETH() public {
+        // Send ETH to the token contract
+        vm.deal(address(token), 1 ether);
+
+        uint256 balanceBefore = user1.balance;
+
+        vm.prank(emergencyAdmin);
+        token.emergencyWithdraw(address(0), user1, 1 ether);
+
+        assertEq(user1.balance, balanceBefore + 1 ether);
+    }
+
+    function test_EmergencyWithdraw_RevertsForNonEmergencyAdmin() public {
+        vm.deal(address(token), 1 ether);
+
+        vm.expectRevert();
+        vm.prank(user1);
+        token.emergencyWithdraw(address(0), user1, 1 ether);
+    }
+
+    // ============================================
+    // DOMAIN SEPARATOR TEST
+    // ============================================
+
+    function test_DomainSeparator_Exists() public view {
+        bytes32 domainSeparator = token.DOMAIN_SEPARATOR();
+        assertTrue(domainSeparator != bytes32(0));
+    }
+
+    // ============================================
     // FUZZ TESTS
     // ============================================
 
@@ -401,6 +526,24 @@ contract kToken0UnitTest is Test {
 
         vm.prank(minter);
         token.crosschainBurn(user, burnAmount);
+
+        assertEq(token.balanceOf(user), mintAmount - burnAmount);
+    }
+
+    function testFuzz_BurnFrom(address user, uint256 mintAmount, uint256 allowance, uint256 burnAmount) public {
+        vm.assume(user != address(0) && user != minter);
+        mintAmount = bound(mintAmount, 1, type(uint96).max);
+        allowance = bound(allowance, 1, mintAmount);
+        burnAmount = bound(burnAmount, 1, allowance);
+
+        vm.prank(minter);
+        token.mint(user, mintAmount);
+
+        vm.prank(user);
+        token.approve(minter, allowance);
+
+        vm.prank(minter);
+        token.burnFrom(user, burnAmount);
 
         assertEq(token.balanceOf(user), mintAmount - burnAmount);
     }

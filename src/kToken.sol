@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.30;
 
-import { OptimizedOwnableRoles } from "../solady/auth/OptimizedOwnableRoles.sol";
-import { ERC20 } from "../solady/tokens/ERC20.sol";
-import { Multicallable } from "../solady/utils/Multicallable.sol";
-import { ReentrancyGuard } from "../solady/utils/ReentrancyGuard.sol";
-import { SafeTransferLib } from "../solady/utils/SafeTransferLib.sol";
+import { OptimizedOwnableRoles } from "./vendor/solady/auth/OptimizedOwnableRoles.sol";
+import { ERC20 } from "./vendor/solady/tokens/ERC20.sol";
+import { Initializable } from "./vendor/solady/utils/Initializable.sol";
+import { Multicallable } from "./vendor/solady/utils/Multicallable.sol";
+import { ReentrancyGuard } from "./vendor/solady/utils/ReentrancyGuard.sol";
+import { SafeTransferLib } from "./vendor/solady/utils/SafeTransferLib.sol";
+import { UUPSUpgradeable } from "./vendor/solady/utils/UUPSUpgradeable.sol";
 
+import { ERC3009 } from "./base/ERC3009.sol";
 import {
     KTOKEN_IS_PAUSED,
     KTOKEN_TRANSFER_FAILED,
@@ -14,22 +17,34 @@ import {
     KTOKEN_ZERO_ADDRESS,
     KTOKEN_ZERO_AMOUNT
 } from "./errors/Errors.sol";
+import { IERC7802 } from "./interfaces/IERC7802.sol";
 import { IkToken } from "./interfaces/IkToken.sol";
+import { IERC165 } from "@openzeppelin/contracts/interfaces/IERC165.sol";
 
 /// @title kToken
-/// @notice ERC20 representation of underlying assets with guaranteed 1:1 backing in the KAM protocol
+/// @notice Unified ERC20 token for KAM protocol with crosschain support via ERC7802
 /// @dev This contract serves as the tokenized wrapper for protocol-supported underlying assets (USDC, WBTC, etc.).
 /// Each kToken maintains a strict 1:1 relationship with its underlying asset through controlled minting and burning.
-/// Key characteristics: (1) Authorized minters (kMinter for institutional deposits, kAssetRouter for yield
-/// distribution)
-/// can create/destroy tokens, (2) kMinter mints tokens 1:1 when assets are deposited and burns during redemptions,
-/// (3) kAssetRouter mints tokens to distribute positive yield to vaults and burns tokens for negative yield/losses,
-/// (4) Implements three-tier role system: ADMIN_ROLE for management, EMERGENCY_ADMIN_ROLE for emergency operations,
-/// MINTER_ROLE for token creation/destruction, (5) Features emergency pause mechanism to halt all transfers during
-/// protocol emergencies, (6) Supports emergency asset recovery for accidentally sent tokens. The contract ensures
-/// protocol integrity by maintaining that kToken supply accurately reflects the underlying asset backing plus any
-/// distributed yield, while enabling efficient yield distribution without physical asset transfers.
-contract kToken is IkToken, ERC20, OptimizedOwnableRoles, ReentrancyGuard, Multicallable {
+/// Key characteristics:
+/// - Upgradeable via UUPS proxy pattern
+/// - ERC-7201 namespaced storage for upgrade safety
+/// - ERC3009 for gasless transfers via signed authorizations
+/// - ERC7802 for crosschain mint/burn operations (used by kOFT/LayerZero)
+/// - Three-tier role system: ADMIN_ROLE, EMERGENCY_ADMIN_ROLE, MINTER_ROLE
+/// - Emergency pause mechanism to halt all transfers during protocol emergencies
+/// - Emergency asset recovery for accidentally sent tokens
+contract kToken is
+    IkToken,
+    ERC20,
+    OptimizedOwnableRoles,
+    ReentrancyGuard,
+    Multicallable,
+    ERC3009,
+    Initializable,
+    UUPSUpgradeable,
+    IERC7802,
+    IERC165
+{
     using SafeTransferLib for address;
 
     /* //////////////////////////////////////////////////////////////
@@ -45,36 +60,62 @@ contract kToken is IkToken, ERC20, OptimizedOwnableRoles, ReentrancyGuard, Multi
                               STORAGE
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Emergency pause state flag for halting all token operations during crises
-    /// @dev When true, prevents all transfers, minting, and burning through _beforeTokenTransfer hook
-    bool _isPaused;
-    /// @notice Human-readable name of the kToken (e.g., "KAM USDC")
-    /// @dev Stored privately to override ERC20 default implementation with custom naming
-    string private _name;
-    /// @notice Trading symbol of the kToken (e.g., "kUSDC")
-    /// @dev Stored privately to provide consistent protocol naming convention
-    string private _symbol;
-    /// @notice Number of decimal places for the kToken, matching the underlying asset
-    /// @dev Critical for maintaining 1:1 exchange rates with underlying assets
-    uint8 private _decimals;
+    /// @notice Core storage structure for kToken using ERC-7201 namespaced storage pattern
+    /// @dev This structure maintains all token state including metadata and pause status.
+    /// Uses the diamond storage pattern to prevent storage collisions in upgradeable contracts.
+    /// @custom:storage-location erc7201:kam.storage.kToken
+    struct kTokenStorage {
+        /// @dev Emergency pause state flag for halting all token operations during crises
+        /// When true, prevents all transfers, minting, and burning through _beforeTokenTransfer hook
+        bool isPaused;
+        /// @dev Human-readable name of the kToken (e.g., "KAM USDC")
+        /// Stored to override ERC20 default implementation with custom naming
+        string name;
+        /// @dev Trading symbol of the kToken (e.g., "kUSDC")
+        /// Stored to provide consistent protocol naming convention
+        string symbol;
+        /// @dev Number of decimal places for the kToken, matching the underlying asset
+        /// Critical for maintaining 1:1 exchange rates with underlying assets
+        uint8 decimals;
+    }
+
+    // keccak256(abi.encode(uint256(keccak256("kam.storage.kToken")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant KTOKEN_STORAGE_LOCATION =
+        0x16bd9563685e3cbcdc4b78929edb0548ee39d4c92d391b8a20b1f73a439d0800;
+
+    /// @notice Retrieves the kToken storage struct from its designated storage slot
+    /// @dev Uses ERC-7201 namespaced storage pattern to access the storage struct at a deterministic location.
+    /// This approach prevents storage collisions in upgradeable contracts and allows safe addition of new
+    /// storage variables in future upgrades without affecting existing storage layout.
+    /// @return $ The kTokenStorage struct reference for state modifications
+    function _getkTokenStorage() private pure returns (kTokenStorage storage $) {
+        assembly {
+            $.slot := KTOKEN_STORAGE_LOCATION
+        }
+    }
 
     /* //////////////////////////////////////////////////////////////
                               CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Deploys and initializes a new kToken with specified parameters and role assignments
-    /// @dev This constructor is called by kRegistry during asset registration to create the kToken wrapper.
+    /// @notice Disables initializers to prevent implementation contract initialization
+    constructor() {
+        _disableInitializers();
+    }
+
+    /// @notice Initializes the kToken contract with specified parameters and role assignments
+    /// @dev This function is called during deployment to set up the kToken wrapper.
     /// The process establishes: (1) ownership hierarchy with owner at the top, (2) role assignments for protocol
     /// operations, (3) token metadata matching the underlying asset. The decimals parameter is particularly
     /// important as it must match the underlying asset to maintain accurate 1:1 exchange rates.
     /// @param _owner The contract owner (typically kRegistry or protocol governance)
     /// @param _admin Address to receive ADMIN_ROLE for managing minters and emergency admins
     /// @param _emergencyAdmin Address to receive EMERGENCY_ADMIN_ROLE for pause/emergency operations
-    /// @param _minter Address to receive initial MINTER_ROLE (typically kMinter contract)
+    /// @param _minter Address to receive initial MINTER_ROLE (typically kMinter or kOFT contract)
     /// @param _nameValue Human-readable token name (e.g., \"KAM USDC\")
     /// @param _symbolValue Token symbol for trading (e.g., \"kUSDC\")
     /// @param _decimalsValue Decimal places matching the underlying asset for accurate conversions
-    constructor(
+    function initialize(
         address _owner,
         address _admin,
         address _emergencyAdmin,
@@ -82,7 +123,10 @@ contract kToken is IkToken, ERC20, OptimizedOwnableRoles, ReentrancyGuard, Multi
         string memory _nameValue,
         string memory _symbolValue,
         uint8 _decimalsValue
-    ) {
+    )
+        external
+        initializer
+    {
         require(_owner != address(0), KTOKEN_ZERO_ADDRESS);
         require(_admin != address(0), KTOKEN_ZERO_ADDRESS);
         require(_emergencyAdmin != address(0), KTOKEN_ZERO_ADDRESS);
@@ -94,10 +138,11 @@ contract kToken is IkToken, ERC20, OptimizedOwnableRoles, ReentrancyGuard, Multi
         _grantRoles(_emergencyAdmin, EMERGENCY_ADMIN_ROLE);
         _grantRoles(_minter, MINTER_ROLE);
 
-        _name = _nameValue;
-        _symbol = _symbolValue;
-        _decimals = _decimalsValue;
-        emit TokenCreated(address(this), _owner, _name, _symbol, _decimals);
+        kTokenStorage storage $ = _getkTokenStorage();
+        $.name = _nameValue;
+        $.symbol = _symbolValue;
+        $.decimals = _decimalsValue;
+        emit TokenCreated(address(this), _owner, $.name, $.symbol, $.decimals);
     }
 
     /* //////////////////////////////////////////////////////////////
@@ -115,7 +160,6 @@ contract kToken is IkToken, ERC20, OptimizedOwnableRoles, ReentrancyGuard, Multi
     /// distributions)
     function mint(address _to, uint256 _amount) external {
         _checkMinter(msg.sender);
-        _checkPaused();
         _mint(_to, _amount);
     }
 
@@ -130,7 +174,6 @@ contract kToken is IkToken, ERC20, OptimizedOwnableRoles, ReentrancyGuard, Multi
     /// @param _amount The quantity of kTokens to burn (matches redeemed assets or loss amounts)
     function burn(address _from, uint256 _amount) external {
         _checkMinter(msg.sender);
-        _checkPaused();
         _burn(_from, _amount);
     }
 
@@ -145,7 +188,6 @@ contract kToken is IkToken, ERC20, OptimizedOwnableRoles, ReentrancyGuard, Multi
     /// @param _amount The quantity of kTokens to burn using the allowance mechanism
     function burnFrom(address _from, uint256 _amount) external {
         _checkMinter(msg.sender);
-        _checkPaused();
         _spendAllowance(_from, msg.sender, _amount);
         _burn(_from, _amount);
     }
@@ -185,6 +227,34 @@ contract kToken is IkToken, ERC20, OptimizedOwnableRoles, ReentrancyGuard, Multi
     }
 
     /* //////////////////////////////////////////////////////////////
+                        CROSSCHAIN OPERATIONS (ERC7802)
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Allows the OFT contract to mint tokens for crosschain transfers
+    /// @dev Called by kOFT when tokens are received from another chain via LayerZero.
+    /// Emits both internal Minted event and ERC7802 CrosschainMint event.
+    /// @param _to Address to mint tokens to
+    /// @param _amount Amount of tokens to mint
+    function crosschainMint(address _to, uint256 _amount) external nonReentrant {
+        _checkMinter(msg.sender);
+        _checkPaused();
+        _mint(_to, _amount);
+        emit CrosschainMint(_to, _amount, msg.sender);
+    }
+
+    /// @notice Allows the OFT contract to burn tokens for crosschain transfers
+    /// @dev Called by kOFT when tokens are being sent to another chain via LayerZero.
+    /// Emits both internal Burned event and ERC7802 CrosschainBurn event.
+    /// @param _from Address to burn tokens from
+    /// @param _amount Amount of tokens to burn
+    function crosschainBurn(address _from, uint256 _amount) external nonReentrant {
+        _checkMinter(msg.sender);
+        _checkPaused();
+        _burn(_from, _amount);
+        emit CrosschainBurn(_from, _amount, msg.sender);
+    }
+
+    /* //////////////////////////////////////////////////////////////
                           VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
@@ -192,28 +262,32 @@ contract kToken is IkToken, ERC20, OptimizedOwnableRoles, ReentrancyGuard, Multi
     /// @dev Returns the name stored in contract storage during initialization
     /// @return The token name as a string
     function name() public view virtual override(ERC20, IkToken) returns (string memory) {
-        return _name;
+        kTokenStorage storage $ = _getkTokenStorage();
+        return $.name;
     }
 
     /// @notice Retrieves the abbreviated symbol of the token
     /// @dev Returns the symbol stored in contract storage during initialization
     /// @return The token symbol as a string
     function symbol() public view virtual override(ERC20, IkToken) returns (string memory) {
-        return _symbol;
+        kTokenStorage storage $ = _getkTokenStorage();
+        return $.symbol;
     }
 
     /// @notice Retrieves the number of decimal places for the token
     /// @dev Returns the decimals value stored in contract storage during initialization
     /// @return The number of decimal places as uint8
     function decimals() public view virtual override(ERC20, IkToken) returns (uint8) {
-        return _decimals;
+        kTokenStorage storage $ = _getkTokenStorage();
+        return $.decimals;
     }
 
     /// @notice Checks whether the contract is currently in paused state
     /// @dev Reads the isPaused flag from contract storage
     /// @return Boolean indicating if contract operations are paused
     function isPaused() external view returns (bool) {
-        return _isPaused;
+        kTokenStorage storage $ = _getkTokenStorage();
+        return $.isPaused;
     }
 
     /// @notice Returns the total amount of tokens in existence
@@ -241,6 +315,19 @@ contract kToken is IkToken, ERC20, OptimizedOwnableRoles, ReentrancyGuard, Multi
         returns (uint256)
     {
         return ERC20.allowance(_owner, _spender);
+    }
+
+    /// @dev Override from ERC20 - required by ERC3009.
+    /// @dev This is the hook that ERC3009 uses for signature verification.
+    function DOMAIN_SEPARATOR() public view virtual override(IkToken, ERC20, ERC3009) returns (bytes32) {
+        return super.DOMAIN_SEPARATOR();
+    }
+
+    /// @notice Checks if the contract supports an interface
+    /// @param interfaceId The interface id to check
+    /// @return True if the contract supports the interface, false otherwise
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IERC7802).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 
     /* //////////////////////////////////////////////////////////////
@@ -305,8 +392,9 @@ contract kToken is IkToken, ERC20, OptimizedOwnableRoles, ReentrancyGuard, Multi
     /// @param _paused True to pause all operations, false to resume normal operations
     function setPaused(bool _paused) external {
         _checkEmergencyAdmin(msg.sender);
-        _isPaused = _paused;
-        emit PauseState(_isPaused);
+        kTokenStorage storage $ = _getkTokenStorage();
+        $.isPaused = _paused;
+        emit PauseState($.isPaused);
     }
 
     /// @notice Emergency recovery function for accidentally sent assets
@@ -341,11 +429,18 @@ contract kToken is IkToken, ERC20, OptimizedOwnableRoles, ReentrancyGuard, Multi
                         INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /// @dev Override from ERC20 - required by ERC3009.
+    /// @dev This is the hook that ERC3009.transferWithAuthorization calls.
+    function _transfer(address from, address to, uint256 amount) internal virtual override(ERC20, ERC3009) {
+        super._transfer(from, to, amount);
+    }
+
     /// @notice Internal function to validate that the contract is not in emergency pause state
     /// @dev Called before all token operations (transfers, mints, burns) to enforce emergency stops.
     /// Reverts with KTOKEN_IS_PAUSED if the contract is paused, effectively halting all token activity.
     function _checkPaused() internal view {
-        require(!_isPaused, KTOKEN_IS_PAUSED);
+        kTokenStorage storage $ = _getkTokenStorage();
+        require(!$.isPaused, KTOKEN_IS_PAUSED);
     }
 
     /// @notice Check if caller has Admin role
@@ -377,5 +472,17 @@ contract kToken is IkToken, ERC20, OptimizedOwnableRoles, ReentrancyGuard, Multi
     function _beforeTokenTransfer(address _from, address _to, uint256 _amount) internal virtual override {
         _checkPaused();
         super._beforeTokenTransfer(_from, _to, _amount);
+    }
+
+    /* //////////////////////////////////////////////////////////////
+                        UPGRADE AUTHORIZATION
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Authorizes contract upgrades
+    /// @param _newImplementation New implementation address
+    /// @dev Only callable by contract owner
+    function _authorizeUpgrade(address _newImplementation) internal view override {
+        _checkOwner();
+        require(_newImplementation != address(0), KTOKEN_ZERO_ADDRESS);
     }
 }

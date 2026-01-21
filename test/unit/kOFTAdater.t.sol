@@ -2,12 +2,12 @@
 pragma solidity ^0.8.20;
 
 import { kOFTAdapter } from "../../src/kOFTAdapter.sol";
-import { kToken0 } from "../../src/kToken0.sol";
+import { kToken } from "../../src/kToken.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { Test } from "forge-std/Test.sol";
 
 contract kOFTAdapterTest is Test {
-    kToken0 public token;
+    kToken public token;
     kOFTAdapter public oftAdapter;
     address public lzEndpoint;
     address public owner = address(0x1);
@@ -24,16 +24,14 @@ contract kOFTAdapterTest is Test {
         lzEndpoint = address(0x1337);
         vm.etch(lzEndpoint, "mock");
 
-        // Deploy kToken0 (hub deployment pattern)
-        token = new kToken0(
-            owner,
-            admin,
-            emergencyAdmin,
-            address(this), // temporary - will grant to adapter later
-            NAME,
-            SYMBOL,
-            DECIMALS
+        // Deploy kToken via proxy (hub deployment pattern)
+        kToken tokenImplementation = new kToken();
+        bytes memory tokenInitData = abi.encodeCall(
+            kToken.initialize,
+            (owner, admin, emergencyAdmin, address(this), NAME, SYMBOL, DECIMALS) // temporary minter
         );
+        ERC1967Proxy tokenProxy = new ERC1967Proxy(address(tokenImplementation), tokenInitData);
+        token = kToken(address(tokenProxy));
 
         // Deploy kOFTAdapter
         kOFTAdapter implementation = new kOFTAdapter(address(token), lzEndpoint);
