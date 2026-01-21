@@ -19,7 +19,7 @@ import {
 } from "./errors/Errors.sol";
 import { IERC7802 } from "./interfaces/IERC7802.sol";
 import { IkToken } from "./interfaces/IkToken.sol";
-import { IERC165 } from "@openzeppelin/contracts/interfaces/IERC165.sol";
+import { IERC165 } from "./vendor/openzeppelin/IERC165.sol";
 
 /// @title kToken
 /// @notice Unified ERC20 token for KAM protocol with crosschain support via ERC7802
