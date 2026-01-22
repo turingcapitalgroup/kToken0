@@ -16,6 +16,7 @@ contract kTokenUnitTest is Test {
     address public admin = address(0x1002);
     address public emergencyAdmin = address(0x1003);
     address public minter = address(0x1004);
+    address public blacklistAdmin = address(0x1005);
     address public user1 = address(0x2001);
     address public user2 = address(0x2002);
 
@@ -26,6 +27,8 @@ contract kTokenUnitTest is Test {
     event CrosschainMint(address indexed to, uint256 amount, address indexed minter);
     event CrosschainBurn(address indexed from, uint256 amount, address indexed minter);
     event PauseState(bool paused);
+    event AccountFrozen(address indexed account, address indexed by);
+    event AccountUnfrozen(address indexed account, address indexed by);
 
     function setUp() public {
         // Deploy via UUPS proxy pattern
@@ -34,6 +37,10 @@ contract kTokenUnitTest is Test {
             abi.encodeCall(kToken.initialize, (owner, admin, emergencyAdmin, minter, NAME, SYMBOL, DECIMALS));
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         token = kToken(address(proxy));
+
+        // Grant blacklist admin role
+        vm.prank(admin);
+        token.grantBlacklistAdminRole(blacklistAdmin);
     }
 
     // ============================================
@@ -546,6 +553,202 @@ contract kTokenUnitTest is Test {
         token.burnFrom(user, burnAmount);
 
         assertEq(token.balanceOf(user), mintAmount - burnAmount);
+    }
+
+    // ============================================
+    // FREEZE FUNCTIONALITY TESTS
+    // ============================================
+
+    function test_FreezeAccount_Success() public {
+        vm.expectEmit(true, true, false, true);
+        emit AccountFrozen(user1, blacklistAdmin);
+
+        vm.prank(blacklistAdmin);
+        token.freezeAccount(user1);
+
+        assertTrue(token.isFrozen(user1));
+    }
+
+    function test_UnfreezeAccount_Success() public {
+        vm.prank(blacklistAdmin);
+        token.freezeAccount(user1);
+
+        vm.expectEmit(true, true, false, true);
+        emit AccountUnfrozen(user1, blacklistAdmin);
+
+        vm.prank(blacklistAdmin);
+        token.unfreezeAccount(user1);
+
+        assertFalse(token.isFrozen(user1));
+    }
+
+    function test_FrozenAccount_CannotTransfer() public {
+        vm.prank(minter);
+        token.mint(user1, 1000e6);
+
+        vm.prank(blacklistAdmin);
+        token.freezeAccount(user1);
+
+        vm.expectRevert();
+        vm.prank(user1);
+        token.transfer(user2, 100e6);
+    }
+
+    function test_FrozenAccount_CannotReceive() public {
+        vm.prank(minter);
+        token.mint(user1, 1000e6);
+
+        vm.prank(blacklistAdmin);
+        token.freezeAccount(user2);
+
+        vm.expectRevert();
+        vm.prank(user1);
+        token.transfer(user2, 100e6);
+    }
+
+    function test_FrozenAccount_CannotBeMinted() public {
+        vm.prank(blacklistAdmin);
+        token.freezeAccount(user1);
+
+        vm.expectRevert();
+        vm.prank(minter);
+        token.mint(user1, 1000e6);
+    }
+
+    function test_FrozenAccount_CannotBeBurned() public {
+        vm.prank(minter);
+        token.mint(user1, 1000e6);
+
+        vm.prank(blacklistAdmin);
+        token.freezeAccount(user1);
+
+        vm.expectRevert();
+        vm.prank(minter);
+        token.burn(user1, 500e6);
+    }
+
+    function test_FreezeAccount_RevertsForNonAdmin() public {
+        vm.expectRevert();
+        vm.prank(user1);
+        token.freezeAccount(user2);
+    }
+
+    function test_CannotFreezeZeroAddress() public {
+        vm.expectRevert();
+        vm.prank(blacklistAdmin);
+        token.freezeAccount(address(0));
+    }
+
+    function test_CannotFreezeOwner() public {
+        vm.expectRevert();
+        vm.prank(blacklistAdmin);
+        token.freezeAccount(owner);
+    }
+
+    function test_CrosschainMint_RespectsFreeze() public {
+        vm.prank(blacklistAdmin);
+        token.freezeAccount(user1);
+
+        vm.expectRevert();
+        vm.prank(minter);
+        token.crosschainMint(user1, 1000e6);
+    }
+
+    function test_CrosschainBurn_RespectsFreeze() public {
+        vm.prank(minter);
+        token.crosschainMint(user1, 1000e6);
+
+        vm.prank(blacklistAdmin);
+        token.freezeAccount(user1);
+
+        vm.expectRevert();
+        vm.prank(minter);
+        token.crosschainBurn(user1, 500e6);
+    }
+
+    function test_GrantBlacklistAdminRole_Success() public {
+        address newBlacklistAdmin = address(0x888);
+
+        vm.prank(admin);
+        token.grantBlacklistAdminRole(newBlacklistAdmin);
+
+        assertTrue(token.hasAnyRole(newBlacklistAdmin, token.BLACKLIST_ADMIN_ROLE()));
+    }
+
+    function test_GrantBlacklistAdminRole_RevertsForNonAdmin() public {
+        vm.expectRevert();
+        vm.prank(user1);
+        token.grantBlacklistAdminRole(user1);
+    }
+
+    function test_RevokeBlacklistAdminRole_Success() public {
+        vm.prank(admin);
+        token.revokeBlacklistAdminRole(blacklistAdmin);
+
+        assertFalse(token.hasAnyRole(blacklistAdmin, token.BLACKLIST_ADMIN_ROLE()));
+    }
+
+    function test_RevokedBlacklistAdmin_CannotFreeze() public {
+        vm.prank(admin);
+        token.revokeBlacklistAdminRole(blacklistAdmin);
+
+        vm.expectRevert();
+        vm.prank(blacklistAdmin);
+        token.freezeAccount(user1);
+    }
+
+    function test_TransferFrom_RevertsForFrozenFrom() public {
+        vm.prank(minter);
+        token.mint(user1, 1000e6);
+
+        vm.prank(user1);
+        token.approve(user2, 500e6);
+
+        vm.prank(blacklistAdmin);
+        token.freezeAccount(user1);
+
+        vm.expectRevert();
+        vm.prank(user2);
+        token.transferFrom(user1, user2, 100e6);
+    }
+
+    function test_TransferFrom_RevertsForFrozenTo() public {
+        vm.prank(minter);
+        token.mint(user1, 1000e6);
+
+        vm.prank(user1);
+        token.approve(user2, 500e6);
+
+        vm.prank(blacklistAdmin);
+        token.freezeAccount(user2);
+
+        vm.expectRevert();
+        vm.prank(user2);
+        token.transferFrom(user1, user2, 100e6);
+    }
+
+    function testFuzz_FreezeAccount(address account) public {
+        vm.assume(account != address(0) && account != owner);
+
+        vm.prank(blacklistAdmin);
+        token.freezeAccount(account);
+
+        assertTrue(token.isFrozen(account));
+    }
+
+    function testFuzz_FrozenAccountCannotTransfer(address account, uint256 amount) public {
+        vm.assume(account != address(0) && account != owner && account != address(token));
+        amount = bound(amount, 1, type(uint96).max);
+
+        vm.prank(minter);
+        token.mint(account, amount);
+
+        vm.prank(blacklistAdmin);
+        token.freezeAccount(account);
+
+        vm.expectRevert();
+        vm.prank(account);
+        token.transfer(user2, 1);
     }
 }
 

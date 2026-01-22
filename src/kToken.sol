@@ -11,6 +11,7 @@ import { UUPSUpgradeable } from "./vendor/solady/utils/UUPSUpgradeable.sol";
 
 import { ERC3009 } from "./base/ERC3009.sol";
 import {
+    KTOKEN_ACCOUNT_FROZEN,
     KTOKEN_IS_PAUSED,
     KTOKEN_TRANSFER_FAILED,
     KTOKEN_WRONG_ROLE,
@@ -55,6 +56,7 @@ contract kToken is
     uint256 public constant ADMIN_ROLE = _ROLE_0;
     uint256 public constant EMERGENCY_ADMIN_ROLE = _ROLE_1;
     uint256 public constant MINTER_ROLE = _ROLE_2;
+    uint256 public constant BLACKLIST_ADMIN_ROLE = _ROLE_3;
 
     /* //////////////////////////////////////////////////////////////
                               STORAGE
@@ -77,6 +79,9 @@ contract kToken is
         /// @dev Number of decimal places for the kToken, matching the underlying asset
         /// Critical for maintaining 1:1 exchange rates with underlying assets
         uint8 decimals;
+        /// @dev Mapping of frozen accounts - frozen accounts cannot send or receive tokens
+        /// Used for compliance and security purposes to block suspicious addresses
+        mapping(address => bool) isFrozen;
     }
 
     // keccak256(abi.encode(uint256(keccak256("kam.storage.kToken")) - 1)) & ~bytes32(uint256(0xff))
@@ -385,6 +390,22 @@ contract kToken is
         _removeRoles(_minter, MINTER_ROLE);
     }
 
+    /// @notice Grants blacklist admin role privileges to the specified address
+    /// @dev Only callable by addresses with ADMIN_ROLE
+    /// @param _admin The address that will receive blacklist admin role privileges
+    function grantBlacklistAdminRole(address _admin) external {
+        _checkAdmin(msg.sender);
+        _grantRoles(_admin, BLACKLIST_ADMIN_ROLE);
+    }
+
+    /// @notice Removes blacklist admin role privileges from the specified address
+    /// @dev Only callable by addresses with ADMIN_ROLE
+    /// @param _admin The address that will lose blacklist admin role privileges
+    function revokeBlacklistAdminRole(address _admin) external {
+        _checkAdmin(msg.sender);
+        _removeRoles(_admin, BLACKLIST_ADMIN_ROLE);
+    }
+
     /// @notice Activates or deactivates the emergency pause mechanism
     /// @dev When paused, all token transfers, minting, and burning operations are halted to protect the protocol
     /// during security incidents or system maintenance. Only emergency admins can trigger pause/unpause to ensure
@@ -426,6 +447,41 @@ contract kToken is
     }
 
     /* //////////////////////////////////////////////////////////////
+                        FREEZE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Freezes an account, blocking all transfers to and from it
+    /// @dev Only callable by addresses with BLACKLIST_ADMIN_ROLE. The owner cannot be frozen.
+    /// Frozen accounts cannot send or receive tokens, including mints and burns.
+    /// @param _account The address to freeze
+    function freezeAccount(address _account) external {
+        _checkBlacklistAdmin(msg.sender);
+        require(_account != address(0), KTOKEN_ZERO_ADDRESS);
+        require(_account != owner(), KTOKEN_WRONG_ROLE);
+        kTokenStorage storage $ = _getkTokenStorage();
+        $.isFrozen[_account] = true;
+        emit AccountFrozen(_account, msg.sender);
+    }
+
+    /// @notice Unfreezes an account, restoring transfer capability
+    /// @dev Only callable by addresses with BLACKLIST_ADMIN_ROLE
+    /// @param _account The address to unfreeze
+    function unfreezeAccount(address _account) external {
+        _checkBlacklistAdmin(msg.sender);
+        kTokenStorage storage $ = _getkTokenStorage();
+        $.isFrozen[_account] = false;
+        emit AccountUnfrozen(_account, msg.sender);
+    }
+
+    /// @notice Checks if an account is frozen
+    /// @param _account The address to check
+    /// @return True if the account is frozen, false otherwise
+    function isFrozen(address _account) external view returns (bool) {
+        kTokenStorage storage $ = _getkTokenStorage();
+        return $.isFrozen[_account];
+    }
+
+    /* //////////////////////////////////////////////////////////////
                         INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
@@ -461,16 +517,38 @@ contract kToken is
         require(hasAnyRole(_user, MINTER_ROLE), KTOKEN_WRONG_ROLE);
     }
 
+    /// @notice Check if caller has Blacklist Admin role
+    /// @param _user Address to check
+    function _checkBlacklistAdmin(address _user) internal view {
+        require(hasAnyRole(_user, BLACKLIST_ADMIN_ROLE), KTOKEN_WRONG_ROLE);
+    }
+
+    /// @notice Internal function to validate that neither from nor to addresses are frozen
+    /// @dev Called before all token operations (transfers, mints, burns) to enforce freeze mechanism.
+    /// The address(0) is always allowed as it represents mint (from) and burn (to) operations.
+    /// @param _from The source address (address(0) for minting operations)
+    /// @param _to The destination address (address(0) for burning operations)
+    function _checkNotFrozen(address _from, address _to) internal view {
+        kTokenStorage storage $ = _getkTokenStorage();
+        if (_from != address(0)) {
+            require(!$.isFrozen[_from], KTOKEN_ACCOUNT_FROZEN);
+        }
+        if (_to != address(0)) {
+            require(!$.isFrozen[_to], KTOKEN_ACCOUNT_FROZEN);
+        }
+    }
+
     /// @notice Internal hook that executes before any token transfer, mint, or burn operation
-    /// @dev This critical function enforces the pause mechanism across all token operations by checking the pause
-    /// state before allowing any balance changes. It intercepts transfers, mints (from=0), and burns (to=0) to
-    /// ensure protocol-wide emergency stops work correctly. The hook pattern allows centralized control over
-    /// all token movements while maintaining ERC20 compatibility.
+    /// @dev This critical function enforces the pause and freeze mechanisms across all token operations by checking
+    /// the pause state and frozen accounts before allowing any balance changes. It intercepts transfers,
+    /// mints (from=0), and burns (to=0) to ensure protocol-wide emergency stops and compliance freezes work correctly.
+    /// The hook pattern allows centralized control over all token movements while maintaining ERC20 compatibility.
     /// @param _from The source address (address(0) for minting operations)
     /// @param _to The destination address (address(0) for burning operations)
     /// @param _amount The quantity of tokens being transferred/minted/burned
     function _beforeTokenTransfer(address _from, address _to, uint256 _amount) internal virtual override {
         _checkPaused();
+        _checkNotFrozen(_from, _to);
         super._beforeTokenTransfer(_from, _to, _amount);
     }
 

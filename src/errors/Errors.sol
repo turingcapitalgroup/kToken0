@@ -12,6 +12,7 @@ string constant KTOKEN_TRANSFER_FAILED = "T2";
 string constant KTOKEN_ZERO_ADDRESS = "T3";
 string constant KTOKEN_ZERO_AMOUNT = "T4";
 string constant KTOKEN_WRONG_ROLE = "T5";
+string constant KTOKEN_ACCOUNT_FROZEN = "T6";
 
 // kTokenFactory Errors
 string constant KTOKENFACTORY_ZERO_ADDRESS = "F1";
