@@ -120,10 +120,11 @@ function initialize(address _delegate) external initializer
 
 - **ERC-20 Standard**: Full compliance with ERC-20 token standard
 - **ERC-7802 Interface**: Native `crosschainMint` and `crosschainBurn` functions
-- **Role-Based Access Control**: Three-tier role system
-  - `ADMIN_ROLE`: Manages minters and emergency admins
+- **Role-Based Access Control**: Four-tier role system
+  - `ADMIN_ROLE`: Manages minters, emergency admins, and blacklist admins
   - `EMERGENCY_ADMIN_ROLE`: Handles pause/emergency operations
   - `MINTER_ROLE`: Authorized to mint/burn tokens (kOFT contract has this role)
+  - `BLACKLIST_ADMIN_ROLE`: Authorized to freeze/unfreeze accounts
 - **Purpose-Built**: Designed from the ground up for cross-chain operations
 - **Reentrancy Protection**: All critical functions protected
 
@@ -133,6 +134,16 @@ function initialize(address _delegate) external initializer
 function crosschainMint(address _to, uint256 _amount) external nonReentrant onlyRoles(MINTER_ROLE)
 function crosschainBurn(address _from, uint256 _amount) external nonReentrant onlyRoles(MINTER_ROLE)
 ```
+
+**Freeze/Blacklist Functions** (USDC-style compliance):
+
+```solidity
+function freezeAccount(address _account) external onlyRoles(BLACKLIST_ADMIN_ROLE)
+function unfreezeAccount(address _account) external onlyRoles(BLACKLIST_ADMIN_ROLE)
+function isFrozen(address _account) external view returns (bool)
+```
+
+The freeze mechanism blocks all token movements (transfers, mints, burns) for frozen addresses. This enables compliance with regulatory requirements and security incident response.
 
 **Why Different from Mainnet kToken?**
 
@@ -374,12 +385,13 @@ ADMIN_ROLE (kToken0)
     │
     ├─► Can grant/revoke EMERGENCY_ADMIN_ROLE
     ├─► Can grant/revoke MINTER_ROLE
+    ├─► Can grant/revoke BLACKLIST_ADMIN_ROLE
     │
     ▼
-EMERGENCY_ADMIN_ROLE          MINTER_ROLE (kOFT)
-    │                              │
-    ├─► Emergency pause            ├─► crosschainMint()
-    ├─► Emergency withdraw         └─► crosschainBurn()
+EMERGENCY_ADMIN_ROLE    MINTER_ROLE (kOFT)    BLACKLIST_ADMIN_ROLE
+    │                        │                      │
+    ├─► Emergency pause      ├─► crosschainMint()   ├─► freezeAccount()
+    ├─► Emergency withdraw   └─► crosschainBurn()   └─► unfreezeAccount()
     └─► Protocol safety ops
 ```
 
@@ -395,13 +407,35 @@ EMERGENCY_ADMIN_ROLE          MINTER_ROLE (kOFT)
 
 #### Satellite Chains (kOFT + kToken0):
 
-#1. **Immutable References**: kOFT holds immutable reference to kToken0
+1. **Immutable References**: kOFT holds immutable reference to kToken0
 2. **Role Segregation**: Only kOFT can mint/burn (MINTER_ROLE)
 3. **Reentrancy Protection**: All crosschain functions protected
 4. **Pause Mechanism**: Emergency circuit breaker for all operations
 5. **Zero Address Protection**: Redirects to burn address, prevents lock-up
 6. **Peer Validation**: Only accepts messages from trusted remotes
 7. **Upgrade Safety**: Initializers disabled after deployment
+8. **Freeze/Blacklist Mechanism**: USDC-style account freezing for compliance
+
+#### Freeze/Blacklist Security Model:
+
+The freeze mechanism provides USDC-style compliance capabilities:
+
+1. **Blocked Operations for Frozen Accounts**:
+   - Cannot send tokens (transfer, transferFrom)
+   - Cannot receive tokens (transfer, transferFrom, mint)
+   - Cannot be minted to (crosschainMint blocked)
+   - Cannot be burned from (crosschainBurn blocked)
+   - Funds remain locked until unfrozen
+
+2. **Protection Rules**:
+   - Owner address cannot be frozen
+   - `address(0)` cannot be frozen (mint/burn sentinel)
+   - Only `BLACKLIST_ADMIN_ROLE` can freeze/unfreeze
+
+3. **Crosschain Considerations**:
+   - Freeze status is checked in `_beforeTokenTransfer` hook
+   - All crosschain operations (via kOFT) respect freeze status
+   - Frozen accounts cannot participate in any crosschain transfers
 
 ### Supply Invariants
 

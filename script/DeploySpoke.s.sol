@@ -2,17 +2,23 @@
 pragma solidity ^0.8.30;
 
 import { kOFT } from "../src/kOFT.sol";
-import { kToken0 } from "../src/kToken0.sol";
+import { kToken } from "../src/kToken.sol";
 
 import { DeploymentManager } from "./DeploymentManager.s.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { console2 } from "forge-std/Script.sol";
 
 /// @title DeploySpoke
-/// @notice Deploys kToken0 + kOFT for spoke chain deployment
-/// @dev This is used for spoke chains where tokens are burned/minted via kOFT
+/// @notice Deploys kToken + kOFT for spoke chain deployment
+/// @dev Spoke deployment is identical to hub - both use kOFT for burn/mint since kToken supports ERC7802.
+/// The only difference is conceptual: hub is where the "canonical" version lives (e.g., mainnet with KAM).
+///
+/// Architecture:
+/// - kToken: The ERC20 token with crosschain mint/burn capabilities (ERC7802)
+/// - kOFT: LayerZero OFT that calls kToken.crosschainBurn on send and kToken.crosschainMint on receive
+/// - kOFT receives MINTER_ROLE on kToken to perform crosschain operations
 contract DeploySpoke is DeploymentManager {
-    kToken0 public token;
+    kToken public token;
     kOFT public koft;
 
     string public name;
@@ -32,18 +38,25 @@ contract DeploySpoke is DeploymentManager {
 
         vm.startBroadcast();
 
-        // Step 1: Deploy kToken0 with deployer as temporary kOFT
-        console2.log("=== Deploying kToken0 (Spoke) ===");
-        token = new kToken0(
-            config.roles.owner,
-            config.roles.admin,
-            config.roles.emergencyAdmin,
-            msg.sender, // temporary kOFT
-            name,
-            symbol,
-            decimals
+        // Step 1: Deploy kToken via proxy with deployer as temporary minter
+        console2.log("=== Deploying kToken (Spoke) ===");
+        kToken tokenImplementation = new kToken();
+        bytes memory tokenInitData = abi.encodeCall(
+            kToken.initialize,
+            (
+                config.roles.owner,
+                config.roles.admin,
+                config.roles.emergencyAdmin,
+                msg.sender, // temporary minter
+                name,
+                symbol,
+                decimals
+            )
         );
-        console2.log("kToken0 deployed at:", address(token));
+        ERC1967Proxy tokenProxy = new ERC1967Proxy(address(tokenImplementation), tokenInitData);
+        token = kToken(address(tokenProxy));
+        console2.log("kToken implementation:", address(tokenImplementation));
+        console2.log("kToken proxy deployed at:", address(token));
 
         // Step 2: Deploy kOFT (Spoke uses kOFT for burning/minting)
         console2.log("=== Deploying kOFT (Spoke) ===");
@@ -54,27 +67,28 @@ contract DeploySpoke is DeploymentManager {
         console2.log("kOFT implementation:", address(implementation));
         console2.log("kOFT proxy deployed at:", address(koft));
 
-        // Step 3: Grant kOFT the MINTER_ROLE on kToken0
+        // Step 3: Grant kOFT the MINTER_ROLE on kToken
         console2.log("=== Granting MINTER_ROLE to kOFT ===");
         token.grantMinterRole(address(koft));
-        console2.log("kOFT granted MINTER_ROLE on kToken0");
+        console2.log("kOFT granted MINTER_ROLE on kToken");
 
-        // Step 4: Remove MINTER_ROLE from owner for security
-        try token.revokeMinterRole(config.roles.owner) {
-            console2.log("Removed MINTER_ROLE from owner");
+        // Step 4: Remove MINTER_ROLE from deployer for security
+        try token.revokeMinterRole(msg.sender) {
+            console2.log("Removed MINTER_ROLE from deployer");
         } catch {
-            console2.log("Owner did not have MINTER_ROLE or revocation failed");
+            console2.log("Deployer did not have MINTER_ROLE or revocation failed");
         }
 
         // Write all deployment addresses
-        writeContractAddress("kToken0", address(token));
+        writeContractAddress("kToken", address(token));
+        writeContractAddress("kTokenImplementation", address(tokenImplementation));
         writeContractAddress("kOFT", address(koft));
         writeContractAddress("kOFTImplementation", address(implementation));
 
         // Summary
         console2.log("=== Spoke Deployment Summary ===");
         console2.log("Network: Spoke Chain");
-        console2.log("kToken0:", address(token));
+        console2.log("kToken:", address(token));
         console2.log("kOFT:", address(koft));
         console2.log("LayerZero Endpoint:", config.layerZero.lzEndpoint);
         console2.log("LayerZero EID:", config.layerZero.lzEid);

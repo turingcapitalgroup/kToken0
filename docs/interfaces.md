@@ -247,6 +247,78 @@ Sets the pause state (emergency use).
 
 ---
 
+### Freeze/Blacklist Functions
+
+#### `freezeAccount(address account)`
+```solidity
+function freezeAccount(address account) external onlyRoles(BLACKLIST_ADMIN_ROLE)
+```
+Freezes an account, blocking all transfers to and from it (USDC-style compliance).
+
+**Access Control:** `BLACKLIST_ADMIN_ROLE` only
+
+**Parameters:**
+- `account`: Address to freeze
+
+**Emits:**
+- `AccountFrozen(address indexed account, address indexed by)`
+
+**Restrictions:**
+- Cannot freeze the owner address
+- Cannot freeze `address(0)`
+
+---
+
+#### `unfreezeAccount(address account)`
+```solidity
+function unfreezeAccount(address account) external onlyRoles(BLACKLIST_ADMIN_ROLE)
+```
+Unfreezes an account, restoring transfer capability.
+
+**Access Control:** `BLACKLIST_ADMIN_ROLE` only
+
+**Parameters:**
+- `account`: Address to unfreeze
+
+**Emits:**
+- `AccountUnfrozen(address indexed account, address indexed by)`
+
+---
+
+#### `isFrozen(address account)`
+```solidity
+function isFrozen(address account) external view returns (bool)
+```
+Checks if an account is frozen.
+
+**Parameters:**
+- `account`: Address to check
+
+**Returns:**
+- `bool`: True if the account is frozen
+
+---
+
+#### `grantBlacklistAdminRole(address admin)`
+```solidity
+function grantBlacklistAdminRole(address admin) external onlyRoles(ADMIN_ROLE)
+```
+Grants blacklist admin role to an address.
+
+**Access Control:** `ADMIN_ROLE` only
+
+---
+
+#### `revokeBlacklistAdminRole(address admin)`
+```solidity
+function revokeBlacklistAdminRole(address admin) external onlyRoles(ADMIN_ROLE)
+```
+Revokes blacklist admin role from an address.
+
+**Access Control:** `ADMIN_ROLE` only
+
+---
+
 ## 2. kOFTAdapter (Mainnet)
 
 LayerZero adapter for locking mainnet kTokens and enabling cross-chain transfers.
@@ -626,6 +698,109 @@ Emergency recovery of accidentally sent tokens.
 - `EmergencyWithdrawal(address indexed token, address indexed to, uint256 amount, address indexed admin)`
 - `RescuedAssets(address indexed asset, address indexed to, uint256 amount)` OR
 - `RescuedETH(address indexed asset, uint256 amount)`
+
+---
+
+### Freeze/Blacklist Functions
+
+#### `freezeAccount(address account)`
+```solidity
+function freezeAccount(address account) external onlyRoles(BLACKLIST_ADMIN_ROLE)
+```
+Freezes an account, blocking all transfers to and from it.
+
+**Access Control:** `BLACKLIST_ADMIN_ROLE` only
+
+**Parameters:**
+- `account`: Address to freeze (cannot be `address(0)` or owner)
+
+**Emits:**
+- `AccountFrozen(address indexed account, address indexed by)`
+
+**Restrictions:**
+- Cannot freeze the owner address
+- Cannot freeze `address(0)`
+
+**Usage Example:**
+```solidity
+// Freeze a suspicious account
+kToken0.freezeAccount(suspiciousAddress);
+```
+
+---
+
+#### `unfreezeAccount(address account)`
+```solidity
+function unfreezeAccount(address account) external onlyRoles(BLACKLIST_ADMIN_ROLE)
+```
+Unfreezes an account, restoring transfer capability.
+
+**Access Control:** `BLACKLIST_ADMIN_ROLE` only
+
+**Parameters:**
+- `account`: Address to unfreeze
+
+**Emits:**
+- `AccountUnfrozen(address indexed account, address indexed by)`
+
+**Usage Example:**
+```solidity
+// Unfreeze an account after resolution
+kToken0.unfreezeAccount(resolvedAddress);
+```
+
+---
+
+#### `isFrozen(address account)`
+```solidity
+function isFrozen(address account) external view returns (bool)
+```
+Checks if an account is frozen.
+
+**Parameters:**
+- `account`: Address to check
+
+**Returns:**
+- `bool`: True if the account is frozen, false otherwise
+
+**Usage Example:**
+```solidity
+if (kToken0.isFrozen(userAddress)) {
+    // Handle frozen account case
+}
+```
+
+---
+
+#### `grantBlacklistAdminRole(address admin)`
+```solidity
+function grantBlacklistAdminRole(address admin) external onlyRoles(ADMIN_ROLE)
+```
+Grants blacklist admin role to an address.
+
+**Access Control:** `ADMIN_ROLE` only
+
+**Parameters:**
+- `admin`: Address to grant blacklist admin role
+
+**Usage Example:**
+```solidity
+// Grant blacklist admin role to compliance team
+kToken0.grantBlacklistAdminRole(complianceTeamAddress);
+```
+
+---
+
+#### `revokeBlacklistAdminRole(address admin)`
+```solidity
+function revokeBlacklistAdminRole(address admin) external onlyRoles(ADMIN_ROLE)
+```
+Revokes blacklist admin role from an address.
+
+**Access Control:** `ADMIN_ROLE` only
+
+**Parameters:**
+- `admin`: Address to revoke blacklist admin role from
 
 ---
 

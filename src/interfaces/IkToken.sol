@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity ^0.8.4;
 
 /// @title IkToken
 /// @notice Interface for kToken with role-based minting and burning capabilities
@@ -44,6 +44,16 @@ interface IkToken {
     /// @param amount The amount of ETH rescued
     event RescuedETH(address indexed asset, uint256 amount);
 
+    /// @notice Emitted when an account is frozen
+    /// @param account The address of the frozen account
+    /// @param by The address that froze the account
+    event AccountFrozen(address indexed account, address indexed by);
+
+    /// @notice Emitted when an account is unfrozen
+    /// @param account The address of the unfrozen account
+    /// @param by The address that unfroze the account
+    event AccountUnfrozen(address indexed account, address indexed by);
+
     /* //////////////////////////////////////////////////////////////
                             CORE OPERATIONS
     //////////////////////////////////////////////////////////////*/
@@ -59,6 +69,12 @@ interface IkToken {
     /// @param from The address from which tokens will be destroyed
     /// @param amount The quantity of tokens to destroy
     function burn(address from, uint256 amount) external;
+
+    /// @notice Destroys tokens from a specified address using the ERC20 allowance mechanism
+    /// @dev Only callable by addresses with MINTER_ROLE
+    /// @param from The address from which kTokens will be burned (must have approved the burn amount)
+    /// @param amount The quantity of kTokens to burn using the allowance mechanism
+    function burnFrom(address from, uint256 amount) external;
 
     /* //////////////////////////////////////////////////////////////
                             ERC20 FUNCTIONS
@@ -173,4 +189,33 @@ interface IkToken {
     /// @dev Only callable by addresses with ADMIN_ROLE
     /// @param minter The address to revoke minter role from
     function revokeMinterRole(address minter) external;
+
+    /// @notice Grants blacklist admin privileges to an address
+    /// @dev Only callable by addresses with ADMIN_ROLE
+    /// @param admin The address to grant blacklist admin role to
+    function grantBlacklistAdminRole(address admin) external;
+
+    /// @notice Revokes blacklist admin privileges from an address
+    /// @dev Only callable by addresses with ADMIN_ROLE
+    /// @param admin The address to revoke blacklist admin role from
+    function revokeBlacklistAdminRole(address admin) external;
+
+    /* //////////////////////////////////////////////////////////////
+                        FREEZE FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Freezes an account, blocking all transfers to and from it
+    /// @dev Only callable by addresses with BLACKLIST_ADMIN_ROLE
+    /// @param account The address to freeze
+    function freeze(address account) external;
+
+    /// @notice Unfreezes an account, restoring transfer capability
+    /// @dev Only callable by addresses with BLACKLIST_ADMIN_ROLE
+    /// @param account The address to unfreeze
+    function unfreeze(address account) external;
+
+    /// @notice Checks if an account is frozen
+    /// @param account The address to check
+    /// @return True if the account is frozen, false otherwise
+    function isFrozen(address account) external view returns (bool);
 }

@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import { OptimizedEfficientHashLib } from "../solady/utils/OptimizedEfficientHashLib.sol";
+import { OptimizedEfficientHashLib } from "../vendor/solady/utils/OptimizedEfficientHashLib.sol";
 
+/// @title ERC3009
 /// @notice EIP-3009 implementation for meta-transaction token transfers.
 /// @dev This contract extends an ERC20 token to support gasless transfers via signed authorizations.
 ///
@@ -15,7 +16,7 @@ import { OptimizedEfficientHashLib } from "../solady/utils/OptimizedEfficientHas
 /// - receiveWithAuthorization prevents front-running (payee must be caller)
 /// - Time-based validity windows (validAfter, validBefore)
 /// - EIP-712 compatible signatures
-abstract contract EIP3009 {
+abstract contract ERC3009 {
     /* //////////////////////////////////////////////////////////////
                                CONSTANTS
     //////////////////////////////////////////////////////////////*/
@@ -68,10 +69,11 @@ abstract contract EIP3009 {
                            REQUIRED INTERFACE
     //////////////////////////////////////////////////////////////*/
 
-    /// Should return the EIP-712 domain separator.
-    function DOMAIN_SEPARATOR() public view virtual returns (bytes32);
+    /// @notice Should return the EIP-712 domain separator.
+    /// @return domainSeparator domain separator hash
+    function DOMAIN_SEPARATOR() public view virtual returns (bytes32 domainSeparator);
 
-    /// Executes the actual token transfer.
+    /// @notice Executes the actual token transfer.
     function _transfer(address from, address to, uint256 amount) internal virtual;
 
     /* //////////////////////////////////////////////////////////////

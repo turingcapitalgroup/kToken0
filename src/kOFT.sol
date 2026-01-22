@@ -4,11 +4,11 @@ pragma solidity 0.8.30;
 import { OFTCoreUpgradeable } from "@layerzerolabs/oft-evm-upgradeable/contracts/oft/OFTCoreUpgradeable.sol";
 import { SendParam } from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
 
-import { kToken0 } from "./kToken0.sol";
+import { kToken } from "./kToken.sol";
 
 /// @title kOFT
 /// @notice LayerZero OFT implementation for cross-chain token abstraction
-/// @dev This contract is a wrapper around the OFTCoreUpgradeable contract to implement the kToken0 contract
+/// @dev This contract is a wrapper around the OFTCoreUpgradeable contract to implement the kToken contract
 contract kOFT is OFTCoreUpgradeable {
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
@@ -21,8 +21,8 @@ contract kOFT is OFTCoreUpgradeable {
                                STORAGE
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice The token0 contract
-    kToken0 public immutable token0;
+    /// @notice The kToken contract
+    kToken public immutable token0;
 
     /*//////////////////////////////////////////////////////////////
                              CONSTRUCTOR
@@ -30,13 +30,13 @@ contract kOFT is OFTCoreUpgradeable {
 
     /// @notice Constructor to initialize the kOFT contract
     /// @param lzEndpoint_ The LayerZero endpoint
-    /// @param kToken0_ The token0 contract
-    constructor(address lzEndpoint_, kToken0 kToken0_) OFTCoreUpgradeable(kToken0_.decimals(), lzEndpoint_) {
-        if (lzEndpoint_ == address(0) || address(kToken0_) == address(0)) {
+    /// @param kToken_ The kToken contract
+    constructor(address lzEndpoint_, kToken kToken_) OFTCoreUpgradeable(kToken_.decimals(), lzEndpoint_) {
+        if (lzEndpoint_ == address(0) || address(kToken_) == address(0)) {
             revert ZeroAddress();
         }
 
-        token0 = kToken0_;
+        token0 = kToken_;
 
         _disableInitializers();
     }

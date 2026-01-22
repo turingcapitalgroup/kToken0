@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import { kOFT } from "../../src/kOFT.sol";
-import { kToken0 } from "../../src/kToken0.sol";
+import { kToken } from "../../src/kToken.sol";
 import { SendParam } from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { Test } from "forge-std/Test.sol";
@@ -12,7 +12,7 @@ import { Test } from "forge-std/Test.sol";
  * @notice Comprehensive unit tests for kOFT contract (Spoke chain)
  */
 contract kOFTUnitTest is Test {
-    kToken0 public token;
+    kToken public token;
     kOFT public oft;
 
     address public owner = address(0x1);
@@ -31,16 +31,14 @@ contract kOFTUnitTest is Test {
         lzEndpoint = address(0x1337);
         vm.etch(lzEndpoint, "mock_endpoint");
 
-        // Deploy kToken0
-        token = new kToken0(
-            owner,
-            admin,
-            emergencyAdmin,
-            address(this), // temporary
-            NAME,
-            SYMBOL,
-            DECIMALS
+        // Deploy kToken via proxy
+        kToken tokenImplementation = new kToken();
+        bytes memory tokenInitData = abi.encodeCall(
+            kToken.initialize,
+            (owner, admin, emergencyAdmin, address(this), NAME, SYMBOL, DECIMALS) // temporary minter
         );
+        ERC1967Proxy tokenProxy = new ERC1967Proxy(address(tokenImplementation), tokenInitData);
+        token = kToken(address(tokenProxy));
 
         // Deploy kOFT
         kOFT implementation = new kOFT(lzEndpoint, token);
@@ -76,7 +74,7 @@ contract kOFTUnitTest is Test {
     }
 
     function test_Constructor_RevertsForZeroToken() public {
-        kToken0 zeroToken = kToken0(address(0));
+        kToken zeroToken = kToken(address(0));
         vm.expectRevert();
         new kOFT(lzEndpoint, zeroToken);
     }
@@ -234,7 +232,7 @@ contract kOFTUnitTest is Test {
     }
 
     // ============================================
-    // INTEGRATION WITH kToken0
+    // INTEGRATION WITH kToken
     // ============================================
 
     function test_OFT_HasMinterRole() public view {
