@@ -207,12 +207,12 @@ interface IkToken {
     /// @notice Freezes an account, blocking all transfers to and from it
     /// @dev Only callable by addresses with BLACKLIST_ADMIN_ROLE
     /// @param account The address to freeze
-    function freezeAccount(address account) external;
+    function freeze(address account) external;
 
     /// @notice Unfreezes an account, restoring transfer capability
     /// @dev Only callable by addresses with BLACKLIST_ADMIN_ROLE
     /// @param account The address to unfreeze
-    function unfreezeAccount(address account) external;
+    function unfreeze(address account) external;
 
     /// @notice Checks if an account is frozen
     /// @param account The address to check

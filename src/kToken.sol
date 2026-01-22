@@ -57,6 +57,7 @@ contract kToken is
     uint256 public constant EMERGENCY_ADMIN_ROLE = _ROLE_1;
     uint256 public constant MINTER_ROLE = _ROLE_2;
     uint256 public constant BLACKLIST_ADMIN_ROLE = _ROLE_3;
+    uint256 public constant WALLET_BLACKLISTED_ROLE = _ROLE_4;
 
     /* //////////////////////////////////////////////////////////////
                               STORAGE
@@ -65,6 +66,7 @@ contract kToken is
     /// @notice Core storage structure for kToken using ERC-7201 namespaced storage pattern
     /// @dev This structure maintains all token state including metadata and pause status.
     /// Uses the diamond storage pattern to prevent storage collisions in upgradeable contracts.
+    /// Frozen accounts are tracked via WALLET_BLACKLISTED_ROLE using Solady's optimized role bitmap.
     /// @custom:storage-location erc7201:kam.storage.kToken
     struct kTokenStorage {
         /// @dev Emergency pause state flag for halting all token operations during crises
@@ -79,9 +81,6 @@ contract kToken is
         /// @dev Number of decimal places for the kToken, matching the underlying asset
         /// Critical for maintaining 1:1 exchange rates with underlying assets
         uint8 decimals;
-        /// @dev Mapping of frozen accounts - frozen accounts cannot send or receive tokens
-        /// Used for compliance and security purposes to block suspicious addresses
-        mapping(address => bool) isFrozen;
     }
 
     // keccak256(abi.encode(uint256(keccak256("kam.storage.kToken")) - 1)) & ~bytes32(uint256(0xff))
@@ -453,23 +452,22 @@ contract kToken is
     /// @notice Freezes an account, blocking all transfers to and from it
     /// @dev Only callable by addresses with BLACKLIST_ADMIN_ROLE. The owner cannot be frozen.
     /// Frozen accounts cannot send or receive tokens, including mints and burns.
+    /// Uses WALLET_BLACKLISTED_ROLE via Solady's optimized role bitmap for gas efficiency.
     /// @param _account The address to freeze
-    function freezeAccount(address _account) external {
+    function freeze(address _account) external {
         _checkBlacklistAdmin(msg.sender);
         require(_account != address(0), KTOKEN_ZERO_ADDRESS);
         require(_account != owner(), KTOKEN_WRONG_ROLE);
-        kTokenStorage storage $ = _getkTokenStorage();
-        $.isFrozen[_account] = true;
+        _grantRoles(_account, WALLET_BLACKLISTED_ROLE);
         emit AccountFrozen(_account, msg.sender);
     }
 
     /// @notice Unfreezes an account, restoring transfer capability
     /// @dev Only callable by addresses with BLACKLIST_ADMIN_ROLE
     /// @param _account The address to unfreeze
-    function unfreezeAccount(address _account) external {
+    function unfreeze(address _account) external {
         _checkBlacklistAdmin(msg.sender);
-        kTokenStorage storage $ = _getkTokenStorage();
-        $.isFrozen[_account] = false;
+        _removeRoles(_account, WALLET_BLACKLISTED_ROLE);
         emit AccountUnfrozen(_account, msg.sender);
     }
 
@@ -477,8 +475,7 @@ contract kToken is
     /// @param _account The address to check
     /// @return True if the account is frozen, false otherwise
     function isFrozen(address _account) external view returns (bool) {
-        kTokenStorage storage $ = _getkTokenStorage();
-        return $.isFrozen[_account];
+        return hasAnyRole(_account, WALLET_BLACKLISTED_ROLE);
     }
 
     /* //////////////////////////////////////////////////////////////
@@ -525,17 +522,12 @@ contract kToken is
 
     /// @notice Internal function to validate that neither from nor to addresses are frozen
     /// @dev Called before all token operations (transfers, mints, burns) to enforce freeze mechanism.
-    /// The address(0) is always allowed as it represents mint (from) and burn (to) operations.
+    /// Uses WALLET_BLACKLISTED_ROLE check - address(0) never has roles so no special handling needed.
     /// @param _from The source address (address(0) for minting operations)
     /// @param _to The destination address (address(0) for burning operations)
     function _checkNotFrozen(address _from, address _to) internal view {
-        kTokenStorage storage $ = _getkTokenStorage();
-        if (_from != address(0)) {
-            require(!$.isFrozen[_from], KTOKEN_ACCOUNT_FROZEN);
-        }
-        if (_to != address(0)) {
-            require(!$.isFrozen[_to], KTOKEN_ACCOUNT_FROZEN);
-        }
+        require(!hasAnyRole(_from, WALLET_BLACKLISTED_ROLE), KTOKEN_ACCOUNT_FROZEN);
+        require(!hasAnyRole(_to, WALLET_BLACKLISTED_ROLE), KTOKEN_ACCOUNT_FROZEN);
     }
 
     /// @notice Internal hook that executes before any token transfer, mint, or burn operation

@@ -564,20 +564,20 @@ contract kTokenUnitTest is Test {
         emit AccountFrozen(user1, blacklistAdmin);
 
         vm.prank(blacklistAdmin);
-        token.freezeAccount(user1);
+        token.freeze(user1);
 
         assertTrue(token.isFrozen(user1));
     }
 
     function test_UnfreezeAccount_Success() public {
         vm.prank(blacklistAdmin);
-        token.freezeAccount(user1);
+        token.freeze(user1);
 
         vm.expectEmit(true, true, false, true);
         emit AccountUnfrozen(user1, blacklistAdmin);
 
         vm.prank(blacklistAdmin);
-        token.unfreezeAccount(user1);
+        token.unfreeze(user1);
 
         assertFalse(token.isFrozen(user1));
     }
@@ -587,7 +587,7 @@ contract kTokenUnitTest is Test {
         token.mint(user1, 1000e6);
 
         vm.prank(blacklistAdmin);
-        token.freezeAccount(user1);
+        token.freeze(user1);
 
         vm.expectRevert();
         vm.prank(user1);
@@ -599,7 +599,7 @@ contract kTokenUnitTest is Test {
         token.mint(user1, 1000e6);
 
         vm.prank(blacklistAdmin);
-        token.freezeAccount(user2);
+        token.freeze(user2);
 
         vm.expectRevert();
         vm.prank(user1);
@@ -608,7 +608,7 @@ contract kTokenUnitTest is Test {
 
     function test_FrozenAccount_CannotBeMinted() public {
         vm.prank(blacklistAdmin);
-        token.freezeAccount(user1);
+        token.freeze(user1);
 
         vm.expectRevert();
         vm.prank(minter);
@@ -620,7 +620,7 @@ contract kTokenUnitTest is Test {
         token.mint(user1, 1000e6);
 
         vm.prank(blacklistAdmin);
-        token.freezeAccount(user1);
+        token.freeze(user1);
 
         vm.expectRevert();
         vm.prank(minter);
@@ -630,24 +630,24 @@ contract kTokenUnitTest is Test {
     function test_FreezeAccount_RevertsForNonAdmin() public {
         vm.expectRevert();
         vm.prank(user1);
-        token.freezeAccount(user2);
+        token.freeze(user2);
     }
 
     function test_CannotFreezeZeroAddress() public {
         vm.expectRevert();
         vm.prank(blacklistAdmin);
-        token.freezeAccount(address(0));
+        token.freeze(address(0));
     }
 
     function test_CannotFreezeOwner() public {
         vm.expectRevert();
         vm.prank(blacklistAdmin);
-        token.freezeAccount(owner);
+        token.freeze(owner);
     }
 
     function test_CrosschainMint_RespectsFreeze() public {
         vm.prank(blacklistAdmin);
-        token.freezeAccount(user1);
+        token.freeze(user1);
 
         vm.expectRevert();
         vm.prank(minter);
@@ -659,7 +659,7 @@ contract kTokenUnitTest is Test {
         token.crosschainMint(user1, 1000e6);
 
         vm.prank(blacklistAdmin);
-        token.freezeAccount(user1);
+        token.freeze(user1);
 
         vm.expectRevert();
         vm.prank(minter);
@@ -694,7 +694,7 @@ contract kTokenUnitTest is Test {
 
         vm.expectRevert();
         vm.prank(blacklistAdmin);
-        token.freezeAccount(user1);
+        token.freeze(user1);
     }
 
     function test_TransferFrom_RevertsForFrozenFrom() public {
@@ -705,7 +705,7 @@ contract kTokenUnitTest is Test {
         token.approve(user2, 500e6);
 
         vm.prank(blacklistAdmin);
-        token.freezeAccount(user1);
+        token.freeze(user1);
 
         vm.expectRevert();
         vm.prank(user2);
@@ -720,7 +720,7 @@ contract kTokenUnitTest is Test {
         token.approve(user2, 500e6);
 
         vm.prank(blacklistAdmin);
-        token.freezeAccount(user2);
+        token.freeze(user2);
 
         vm.expectRevert();
         vm.prank(user2);
@@ -731,7 +731,7 @@ contract kTokenUnitTest is Test {
         vm.assume(account != address(0) && account != owner);
 
         vm.prank(blacklistAdmin);
-        token.freezeAccount(account);
+        token.freeze(account);
 
         assertTrue(token.isFrozen(account));
     }
@@ -744,7 +744,7 @@ contract kTokenUnitTest is Test {
         token.mint(account, amount);
 
         vm.prank(blacklistAdmin);
-        token.freezeAccount(account);
+        token.freeze(account);
 
         vm.expectRevert();
         vm.prank(account);
