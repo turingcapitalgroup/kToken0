@@ -3,8 +3,8 @@ pragma solidity ^0.8.20;
 
 import { kOFTAdapter } from "../../src/kOFTAdapter.sol";
 import { kToken } from "../../src/kToken.sol";
-import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { Test } from "forge-std/Test.sol";
+import { MinimalUUPSFactory } from "minimal-uups-factory/MinimalUUPSFactory.sol";
 
 contract kOFTAdapterTest is Test {
     kToken public token;
@@ -24,20 +24,23 @@ contract kOFTAdapterTest is Test {
         lzEndpoint = address(0x1337);
         vm.etch(lzEndpoint, "mock");
 
+        // Deploy proxy factory
+        MinimalUUPSFactory proxyFactory = new MinimalUUPSFactory();
+
         // Deploy kToken via proxy (hub deployment pattern)
         kToken tokenImplementation = new kToken();
         bytes memory tokenInitData = abi.encodeCall(
             kToken.initialize,
             (owner, admin, emergencyAdmin, address(this), NAME, SYMBOL, DECIMALS) // temporary minter
         );
-        ERC1967Proxy tokenProxy = new ERC1967Proxy(address(tokenImplementation), tokenInitData);
-        token = kToken(address(tokenProxy));
+        address tokenProxy = proxyFactory.deployAndCall(address(tokenImplementation), tokenInitData);
+        token = kToken(tokenProxy);
 
         // Deploy kOFTAdapter
         kOFTAdapter implementation = new kOFTAdapter(address(token), lzEndpoint);
         bytes memory data = abi.encodeWithSelector(kOFTAdapter.initialize.selector, owner);
-        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), data);
-        oftAdapter = kOFTAdapter(address(proxy));
+        address proxy = proxyFactory.deployAndCall(address(implementation), data);
+        oftAdapter = kOFTAdapter(proxy);
 
         // Grant adapter minter role
         vm.prank(admin);

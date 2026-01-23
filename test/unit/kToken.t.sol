@@ -2,8 +2,8 @@
 pragma solidity ^0.8.20;
 
 import { kToken } from "../../src/kToken.sol";
-import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { Test } from "forge-std/Test.sol";
+import { MinimalUUPSFactory } from "minimal-uups-factory/MinimalUUPSFactory.sol";
 
 /**
  * @title kToken Unit Tests
@@ -32,11 +32,12 @@ contract kTokenUnitTest is Test {
 
     function setUp() public {
         // Deploy via UUPS proxy pattern
+        MinimalUUPSFactory proxyFactory = new MinimalUUPSFactory();
         kToken implementation = new kToken();
         bytes memory initData =
             abi.encodeCall(kToken.initialize, (owner, admin, emergencyAdmin, minter, NAME, SYMBOL, DECIMALS));
-        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
-        token = kToken(address(proxy));
+        address proxy = proxyFactory.deployAndCall(address(implementation), initData);
+        token = kToken(proxy);
 
         // Grant blacklist admin role
         vm.prank(admin);

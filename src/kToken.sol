@@ -241,7 +241,6 @@ contract kToken is
     /// @param _amount Amount of tokens to mint
     function crosschainMint(address _to, uint256 _amount) external nonReentrant {
         _checkMinter(msg.sender);
-        _checkPaused();
         _mint(_to, _amount);
         emit CrosschainMint(_to, _amount, msg.sender);
     }
@@ -253,7 +252,6 @@ contract kToken is
     /// @param _amount Amount of tokens to burn
     function crosschainBurn(address _from, uint256 _amount) external nonReentrant {
         _checkMinter(msg.sender);
-        _checkPaused();
         _burn(_from, _amount);
         emit CrosschainBurn(_from, _amount, msg.sender);
     }
