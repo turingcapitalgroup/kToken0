@@ -4,8 +4,8 @@ pragma solidity ^0.8.20;
 import { kOFT } from "../../src/kOFT.sol";
 import { kToken } from "../../src/kToken.sol";
 import { SendParam } from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
-import { MinimalUUPSFactory } from "factory/MinimalUUPSFactory.sol";
 import { Test } from "forge-std/Test.sol";
+import { MinimalUUPSFactory } from "minimal-uups-factory/MinimalUUPSFactory.sol";
 
 /**
  * @title kOFT Unit Tests

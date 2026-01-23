@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.30;
 
-import { MinimalUUPSFactory } from "factory/MinimalUUPSFactory.sol";
+import { MinimalUUPSFactory } from "minimal-uups-factory/MinimalUUPSFactory.sol";
 
 import {
     KTOKENFACTORY_DEPLOYMENT_FAILED,

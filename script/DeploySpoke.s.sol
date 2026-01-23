@@ -5,8 +5,8 @@ import { kOFT } from "../src/kOFT.sol";
 import { kToken } from "../src/kToken.sol";
 
 import { DeploymentManager } from "./DeploymentManager.s.sol";
-import { MinimalUUPSFactory } from "factory/MinimalUUPSFactory.sol";
 import { console2 } from "forge-std/Script.sol";
+import { MinimalUUPSFactory } from "minimal-uups-factory/MinimalUUPSFactory.sol";
 
 /// @title DeploySpoke
 /// @notice Deploys kToken + kOFT for spoke chain deployment

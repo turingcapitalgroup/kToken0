@@ -2,8 +2,8 @@
 pragma solidity ^0.8.20;
 
 import { kToken } from "../../src/kToken.sol";
-import { MinimalUUPSFactory } from "factory/MinimalUUPSFactory.sol";
 import { Test } from "forge-std/Test.sol";
+import { MinimalUUPSFactory } from "minimal-uups-factory/MinimalUUPSFactory.sol";
 
 /**
  * @title kToken Unit Tests
