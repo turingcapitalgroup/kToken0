@@ -4,8 +4,8 @@ pragma solidity ^0.8.30;
 import { kOFT } from "../src/kOFT.sol";
 import { kToken } from "../src/kToken.sol";
 
-import { MinimalUUPSProxyFactory } from "../src/vendor/kam/MinimalUUPSProxyFactory.sol";
 import { DeploymentManager } from "./DeploymentManager.s.sol";
+import { MinimalUUPSFactory } from "factory/MinimalUUPSFactory.sol";
 import { console2 } from "forge-std/Script.sol";
 
 /// @title DeploySpoke
@@ -39,7 +39,7 @@ contract DeploySpoke is DeploymentManager {
         vm.startBroadcast();
 
         // Deploy proxy factory
-        MinimalUUPSProxyFactory proxyFactory = new MinimalUUPSProxyFactory();
+        MinimalUUPSFactory proxyFactory = new MinimalUUPSFactory();
 
         // Step 1: Deploy kToken via proxy with deployer as temporary minter
         console2.log("=== Deploying kToken (Spoke) ===");

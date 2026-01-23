@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.30;
 
-import { MinimalUUPSProxyFactory } from "./vendor/kam/MinimalUUPSProxyFactory.sol";
+import { MinimalUUPSFactory } from "factory/MinimalUUPSFactory.sol";
 
 import {
     KTOKENFACTORY_DEPLOYMENT_FAILED,
@@ -17,7 +17,7 @@ import { kToken } from "./kToken.sol";
 /// @dev This factory contract handles the deployment of kToken contracts for the KAM protocol.
 /// It provides a centralized way to create kTokens with consistent initialization parameters.
 /// The factory follows best practices: (1) Deploys kToken implementation once for gas efficiency,
-/// (2) Uses a pre-deployed ERC1967Factory shared across the protocol to prevent frontrunning,
+/// (2) Uses a pre-deployed MinimalUUPSFactory shared across the protocol to prevent frontrunning,
 /// (3) Input validation to ensure all required parameters are non-zero, (4) Event emission for
 /// off-chain tracking of deployments, (5) Returns the deployed proxy address for immediate use.
 /// The factory is designed to be called by kRegistry during asset registration, ensuring all
@@ -30,7 +30,7 @@ contract kTokenFactory is IkTokenFactory {
 
     address public immutable registry;
     address public immutable implementation;
-    MinimalUUPSProxyFactory public immutable proxyFactory;
+    MinimalUUPSFactory public immutable proxyFactory;
 
     /* //////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -41,13 +41,13 @@ contract kTokenFactory is IkTokenFactory {
     /// This approach saves gas by reusing the same implementation for all kTokens and
     /// using a pre-deployed factory shared across the protocol.
     /// @param _registry The kRegistry address that will be authorized to deploy kTokens
-    /// @param _proxyFactory The pre-deployed MinimalUUPSProxyFactory address for proxy deployments
+    /// @param _proxyFactory The pre-deployed MinimalUUPSFactory address for proxy deployments
     constructor(address _registry, address _proxyFactory) {
         require(_registry != address(0), KTOKENFACTORY_ZERO_ADDRESS);
         require(_proxyFactory != address(0), KTOKENFACTORY_ZERO_ADDRESS);
 
         registry = _registry;
-        proxyFactory = MinimalUUPSProxyFactory(_proxyFactory);
+        proxyFactory = MinimalUUPSFactory(_proxyFactory);
 
         // Deploy kToken implementation once (shared by all proxies)
         implementation = address(new kToken());
@@ -58,9 +58,9 @@ contract kTokenFactory is IkTokenFactory {
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IkTokenFactory
-    /// @dev Uses MinimalUUPSProxyFactory.deployAndCall to atomically deploy proxy and initialize it,
+    /// @dev Uses MinimalUUPSFactory.deployAndCall to atomically deploy proxy and initialize it,
     /// preventing frontrunning attacks where an attacker could call initialize before the legitimate deployer.
-    /// Note: MinimalUUPSProxyFactory has NO admin tracking - all upgrade authority is delegated to the
+    /// Note: MinimalUUPSFactory has NO admin tracking - all upgrade authority is delegated to the
     /// UUPS implementation's _authorizeUpgrade(), ensuring only the owner can upgrade.
     function deployKToken(
         address _owner,

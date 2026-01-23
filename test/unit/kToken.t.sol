@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import { kToken } from "../../src/kToken.sol";
-import { MinimalUUPSProxyFactory } from "../../src/vendor/kam/MinimalUUPSProxyFactory.sol";
+import { MinimalUUPSFactory } from "factory/MinimalUUPSFactory.sol";
 import { Test } from "forge-std/Test.sol";
 
 /**
@@ -32,7 +32,7 @@ contract kTokenUnitTest is Test {
 
     function setUp() public {
         // Deploy via UUPS proxy pattern
-        MinimalUUPSProxyFactory proxyFactory = new MinimalUUPSProxyFactory();
+        MinimalUUPSFactory proxyFactory = new MinimalUUPSFactory();
         kToken implementation = new kToken();
         bytes memory initData =
             abi.encodeCall(kToken.initialize, (owner, admin, emergencyAdmin, minter, NAME, SYMBOL, DECIMALS));

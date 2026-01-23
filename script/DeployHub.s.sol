@@ -4,8 +4,8 @@ pragma solidity ^0.8.30;
 import { kOFTAdapter } from "../src/kOFTAdapter.sol";
 import { kToken } from "../src/kToken.sol";
 
-import { MinimalUUPSProxyFactory } from "../src/vendor/kam/MinimalUUPSProxyFactory.sol";
 import { DeploymentManager } from "./DeploymentManager.s.sol";
+import { MinimalUUPSFactory } from "factory/MinimalUUPSFactory.sol";
 import { console2 } from "forge-std/Script.sol";
 
 /// @title DeployHub
@@ -44,7 +44,7 @@ contract DeployHub is DeploymentManager {
         vm.startBroadcast();
 
         // Deploy proxy factory
-        MinimalUUPSProxyFactory proxyFactory = new MinimalUUPSProxyFactory();
+        MinimalUUPSFactory proxyFactory = new MinimalUUPSFactory();
 
         // Check if we should use existing kToken or deploy new one
         if (config.existingKToken != address(0)) {

@@ -3,8 +3,8 @@ pragma solidity ^0.8.20;
 
 import { kOFT } from "../../src/kOFT.sol";
 import { kToken } from "../../src/kToken.sol";
-import { MinimalUUPSProxyFactory } from "../../src/vendor/kam/MinimalUUPSProxyFactory.sol";
 import { SendParam } from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
+import { MinimalUUPSFactory } from "factory/MinimalUUPSFactory.sol";
 import { Test } from "forge-std/Test.sol";
 
 /**
@@ -26,7 +26,7 @@ contract kOFTUnitTest is Test {
     string constant SYMBOL = "kUSD";
     uint8 constant DECIMALS = 6;
 
-    MinimalUUPSProxyFactory public proxyFactory;
+    MinimalUUPSFactory public proxyFactory;
 
     function setUp() public {
         // Mock LayerZero endpoint
@@ -34,7 +34,7 @@ contract kOFTUnitTest is Test {
         vm.etch(lzEndpoint, "mock_endpoint");
 
         // Deploy proxy factory
-        proxyFactory = new MinimalUUPSProxyFactory();
+        proxyFactory = new MinimalUUPSFactory();
 
         // Deploy kToken via proxy
         kToken tokenImplementation = new kToken();

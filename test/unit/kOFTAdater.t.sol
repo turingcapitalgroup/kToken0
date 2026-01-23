@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import { kOFTAdapter } from "../../src/kOFTAdapter.sol";
 import { kToken } from "../../src/kToken.sol";
-import { MinimalUUPSProxyFactory } from "../../src/vendor/kam/MinimalUUPSProxyFactory.sol";
+import { MinimalUUPSFactory } from "factory/MinimalUUPSFactory.sol";
 import { Test } from "forge-std/Test.sol";
 
 contract kOFTAdapterTest is Test {
@@ -25,7 +25,7 @@ contract kOFTAdapterTest is Test {
         vm.etch(lzEndpoint, "mock");
 
         // Deploy proxy factory
-        MinimalUUPSProxyFactory proxyFactory = new MinimalUUPSProxyFactory();
+        MinimalUUPSFactory proxyFactory = new MinimalUUPSFactory();
 
         // Deploy kToken via proxy (hub deployment pattern)
         kToken tokenImplementation = new kToken();
