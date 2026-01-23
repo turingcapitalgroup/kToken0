@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.30;
 
-import { ERC1967Factory } from "./vendor/solady/utils/ERC1967Factory.sol";
+import { MinimalUUPSProxyFactory } from "./vendor/kam/MinimalUUPSProxyFactory.sol";
 
 import {
     KTOKENFACTORY_DEPLOYMENT_FAILED,
@@ -30,7 +30,7 @@ contract kTokenFactory is IkTokenFactory {
 
     address public immutable registry;
     address public immutable implementation;
-    ERC1967Factory public immutable proxyFactory;
+    MinimalUUPSProxyFactory public immutable proxyFactory;
 
     /* //////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -41,13 +41,13 @@ contract kTokenFactory is IkTokenFactory {
     /// This approach saves gas by reusing the same implementation for all kTokens and
     /// using a pre-deployed factory shared across the protocol.
     /// @param _registry The kRegistry address that will be authorized to deploy kTokens
-    /// @param _proxyFactory The pre-deployed ERC1967Factory address for proxy deployments
+    /// @param _proxyFactory The pre-deployed MinimalUUPSProxyFactory address for proxy deployments
     constructor(address _registry, address _proxyFactory) {
         require(_registry != address(0), KTOKENFACTORY_ZERO_ADDRESS);
         require(_proxyFactory != address(0), KTOKENFACTORY_ZERO_ADDRESS);
 
         registry = _registry;
-        proxyFactory = ERC1967Factory(_proxyFactory);
+        proxyFactory = MinimalUUPSProxyFactory(_proxyFactory);
 
         // Deploy kToken implementation once (shared by all proxies)
         implementation = address(new kToken());
@@ -58,8 +58,10 @@ contract kTokenFactory is IkTokenFactory {
     //////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IkTokenFactory
-    /// @dev Uses ERC1967Factory.deployAndCall to atomically deploy proxy and initialize it,
+    /// @dev Uses MinimalUUPSProxyFactory.deployAndCall to atomically deploy proxy and initialize it,
     /// preventing frontrunning attacks where an attacker could call initialize before the legitimate deployer.
+    /// Note: MinimalUUPSProxyFactory has NO admin tracking - all upgrade authority is delegated to the
+    /// UUPS implementation's _authorizeUpgrade(), ensuring only the owner can upgrade.
     function deployKToken(
         address _owner,
         address _admin,
@@ -82,11 +84,7 @@ contract kTokenFactory is IkTokenFactory {
         bytes memory initData =
             abi.encodeCall(kToken.initialize, (_owner, _admin, _emergencyAdmin, _minter, _name, _symbol, _decimals));
 
-        address _kTokenAddress = proxyFactory.deployAndCall(
-            implementation,
-            msg.sender, // admin of the proxy (registry)
-            initData
-        );
+        address _kTokenAddress = proxyFactory.deployAndCall(implementation, initData);
 
         require(_kTokenAddress != address(0), KTOKENFACTORY_DEPLOYMENT_FAILED);
 

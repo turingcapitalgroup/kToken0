@@ -3,8 +3,8 @@ pragma solidity ^0.8.20;
 
 import { kOFT } from "../../src/kOFT.sol";
 import { kToken } from "../../src/kToken.sol";
+import { MinimalUUPSProxyFactory } from "../../src/vendor/kam/MinimalUUPSProxyFactory.sol";
 import { SendParam } from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
-import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { Test } from "forge-std/Test.sol";
 
 /**
@@ -26,10 +26,15 @@ contract kOFTUnitTest is Test {
     string constant SYMBOL = "kUSD";
     uint8 constant DECIMALS = 6;
 
+    MinimalUUPSProxyFactory public proxyFactory;
+
     function setUp() public {
         // Mock LayerZero endpoint
         lzEndpoint = address(0x1337);
         vm.etch(lzEndpoint, "mock_endpoint");
+
+        // Deploy proxy factory
+        proxyFactory = new MinimalUUPSProxyFactory();
 
         // Deploy kToken via proxy
         kToken tokenImplementation = new kToken();
@@ -37,14 +42,14 @@ contract kOFTUnitTest is Test {
             kToken.initialize,
             (owner, admin, emergencyAdmin, address(this), NAME, SYMBOL, DECIMALS) // temporary minter
         );
-        ERC1967Proxy tokenProxy = new ERC1967Proxy(address(tokenImplementation), tokenInitData);
-        token = kToken(address(tokenProxy));
+        address tokenProxy = proxyFactory.deployAndCall(address(tokenImplementation), tokenInitData);
+        token = kToken(tokenProxy);
 
         // Deploy kOFT
         kOFT implementation = new kOFT(lzEndpoint, token);
         bytes memory data = abi.encodeWithSelector(kOFT.initialize.selector, owner);
-        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), data);
-        oft = kOFT(address(proxy));
+        address proxy = proxyFactory.deployAndCall(address(implementation), data);
+        oft = kOFT(proxy);
 
         // Grant OFT minter role
         vm.prank(admin);
@@ -454,8 +459,8 @@ contract kOFTUnitTest is Test {
         // Deploy second OFT
         kOFT oft2Implementation = new kOFT(lzEndpoint, token);
         bytes memory data2 = abi.encodeWithSelector(kOFT.initialize.selector, owner);
-        ERC1967Proxy proxy2 = new ERC1967Proxy(address(oft2Implementation), data2);
-        kOFT oft2 = kOFT(address(proxy2));
+        address proxy2 = proxyFactory.deployAndCall(address(oft2Implementation), data2);
+        kOFT oft2 = kOFT(proxy2);
 
         vm.prank(admin);
         token.grantMinterRole(address(oft2));

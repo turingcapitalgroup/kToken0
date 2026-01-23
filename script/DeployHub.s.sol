@@ -4,8 +4,8 @@ pragma solidity ^0.8.30;
 import { kOFTAdapter } from "../src/kOFTAdapter.sol";
 import { kToken } from "../src/kToken.sol";
 
+import { MinimalUUPSProxyFactory } from "../src/vendor/kam/MinimalUUPSProxyFactory.sol";
 import { DeploymentManager } from "./DeploymentManager.s.sol";
-import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { console2 } from "forge-std/Script.sol";
 
 /// @title DeployHub
@@ -43,6 +43,9 @@ contract DeployHub is DeploymentManager {
 
         vm.startBroadcast();
 
+        // Deploy proxy factory
+        MinimalUUPSProxyFactory proxyFactory = new MinimalUUPSProxyFactory();
+
         // Check if we should use existing kToken or deploy new one
         if (config.existingKToken != address(0)) {
             // Use existing kToken (e.g., deployed via KAM's kRegistry)
@@ -65,8 +68,8 @@ contract DeployHub is DeploymentManager {
                     decimals
                 )
             );
-            ERC1967Proxy tokenProxy = new ERC1967Proxy(address(tokenImplementation), tokenInitData);
-            token = kToken(address(tokenProxy));
+            address tokenProxy = proxyFactory.deployAndCall(address(tokenImplementation), tokenInitData);
+            token = kToken(tokenProxy);
             console2.log("kToken implementation:", address(tokenImplementation));
             console2.log("kToken proxy deployed at:", address(token));
 
@@ -78,8 +81,8 @@ contract DeployHub is DeploymentManager {
         console2.log("=== Deploying kOFTAdapter (Hub) ===");
         kOFTAdapter adapterImplementation = new kOFTAdapter(address(token), config.layerZero.lzEndpoint);
         bytes memory adapterData = abi.encodeWithSelector(kOFTAdapter.initialize.selector, config.roles.owner);
-        ERC1967Proxy adapterProxy = new ERC1967Proxy(address(adapterImplementation), adapterData);
-        adapter = kOFTAdapter(address(adapterProxy));
+        address adapterProxy = proxyFactory.deployAndCall(address(adapterImplementation), adapterData);
+        adapter = kOFTAdapter(adapterProxy);
         console2.log("kOFTAdapter implementation:", address(adapterImplementation));
         console2.log("kOFTAdapter proxy deployed at:", address(adapter));
 

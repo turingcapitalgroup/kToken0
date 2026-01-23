@@ -4,8 +4,8 @@ pragma solidity ^0.8.30;
 import { kOFT } from "../src/kOFT.sol";
 import { kToken } from "../src/kToken.sol";
 
+import { MinimalUUPSProxyFactory } from "../src/vendor/kam/MinimalUUPSProxyFactory.sol";
 import { DeploymentManager } from "./DeploymentManager.s.sol";
-import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { console2 } from "forge-std/Script.sol";
 
 /// @title DeploySpoke
@@ -38,6 +38,9 @@ contract DeploySpoke is DeploymentManager {
 
         vm.startBroadcast();
 
+        // Deploy proxy factory
+        MinimalUUPSProxyFactory proxyFactory = new MinimalUUPSProxyFactory();
+
         // Step 1: Deploy kToken via proxy with deployer as temporary minter
         console2.log("=== Deploying kToken (Spoke) ===");
         kToken tokenImplementation = new kToken();
@@ -53,8 +56,8 @@ contract DeploySpoke is DeploymentManager {
                 decimals
             )
         );
-        ERC1967Proxy tokenProxy = new ERC1967Proxy(address(tokenImplementation), tokenInitData);
-        token = kToken(address(tokenProxy));
+        address tokenProxy = proxyFactory.deployAndCall(address(tokenImplementation), tokenInitData);
+        token = kToken(tokenProxy);
         console2.log("kToken implementation:", address(tokenImplementation));
         console2.log("kToken proxy deployed at:", address(token));
 
@@ -62,8 +65,8 @@ contract DeploySpoke is DeploymentManager {
         console2.log("=== Deploying kOFT (Spoke) ===");
         kOFT implementation = new kOFT(config.layerZero.lzEndpoint, token);
         bytes memory data = abi.encodeWithSelector(kOFT.initialize.selector, config.roles.owner);
-        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), data);
-        koft = kOFT(address(proxy));
+        address proxy = proxyFactory.deployAndCall(address(implementation), data);
+        koft = kOFT(proxy);
         console2.log("kOFT implementation:", address(implementation));
         console2.log("kOFT proxy deployed at:", address(koft));
 
